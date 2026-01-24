@@ -65,17 +65,30 @@ Alternative: Single USB port (Bluetooth input)
 
 ### 1. Enable USB Gadget Mode
 
-Add to `/boot/config.txt`:
+**IMPORTANT**: Only modify `/boot/config.txt` - DO NOT modify `/boot/cmdline.txt` as this can cause boot failures.
+
+Add to `/boot/config.txt` (or `/boot/firmware/config.txt` on newer systems):
 ```bash
 dtoverlay=dwc2
 ```
 
-Add to `/boot/cmdline.txt` (after `rootwait`):
+This is the safe, modern method recommended for Raspberry Pi OS Bookworm and newer.
+
+### 2. Configure Modules to Load at Boot
+
+Add kernel modules to `/etc/modules` to auto-load at boot:
 ```bash
-modules-load=dwc2
+echo "dwc2" | sudo tee -a /etc/modules
+echo "libcomposite" | sudo tee -a /etc/modules
+echo "usb_f_hid" | sudo tee -a /etc/modules
 ```
 
-### 2. Install Dependencies
+**Why this method?**: 
+- Editing `/boot/cmdline.txt` can easily cause syntax errors leading to initramfs emergency shell
+- Using `/etc/modules` is safer and more maintainable
+- The `dtoverlay=dwc2` in `config.txt` properly enables the USB OTG hardware
+
+### 3. Install Dependencies
 
 ```bash
 # Update system
@@ -89,20 +102,49 @@ sudo pip3 install evdev pyusb
 sudo apt install -y bluetooth bluez python3-dbus
 ```
 
-### 3. Load Required Kernel Modules
-
-```bash
-sudo modprobe libcomposite
-sudo modprobe usb_f_hid
-```
-
 ### 4. Clone and Install
 
 ```bash
 git clone https://github.com/JeremyLakeyJr/Pizero-to-X360.git
 cd Pizero-to-X360
+sudo ./scripts/install.sh
+```
+
+The `install.sh` script will:
+- Configure boot settings safely (no cmdline.txt modifications)
+- Install all dependencies
+- Set up modules for auto-loading
+- Optionally create and enable a systemd service for automatic startup
+
+### 5. Enable Automatic Startup (Optional)
+
+To make the emulator start automatically on boot:
+
+```bash
+# The systemd service is created during install.sh
+# If you skipped it, you can enable it manually:
+sudo systemctl enable xbox360-emulator.service
+sudo systemctl start xbox360-emulator.service
+
+# Check status
+sudo systemctl status xbox360-emulator.service
+
+# View logs
+sudo journalctl -u xbox360-emulator.service -f
+```
+
+### 6. Manual Operation
+
+If you prefer to run manually instead of using the systemd service:
+
+```bash
+# After reboot, set up the USB gadget
 sudo ./scripts/setup_gadget.sh
+
+# Run the emulator
 sudo python3 src/xbox360_emulator.py
+
+# Connect Pi Zero to Xbox 360 via USB
 ```
 
 ## Project Structure
@@ -230,6 +272,47 @@ Use USBPcap with Wireshark to capture traffic from a real Xbox 360 controller.
 2. **Timing Critical**: Xbox 360 expects reports every ~8ms. High system load may cause issues.
 3. **Vendor Requests**: Xbox 360 sends specific vendor control requests that must be handled.
 4. **Authentication**: Xbox 360 may perform authentication checks (typically not enforced for wired).
+
+## Troubleshooting
+
+### Boot Issues
+
+**Problem**: Pi Zero boots into initramfs emergency shell after configuration
+
+**Solution**: This was caused by older installation methods that modified `/boot/cmdline.txt`. The fix:
+
+1. **DO NOT** modify `/boot/cmdline.txt` - use only `/boot/config.txt`
+2. Add `dtoverlay=dwc2` to `/boot/config.txt` instead
+3. Use `/etc/modules` to auto-load kernel modules (not cmdline.txt)
+
+**Why the old method failed**: 
+- Adding `modules-load=dwc2` to cmdline.txt can create parsing errors
+- Any typo, extra newline, or formatting issue in cmdline.txt causes boot failure
+- Modern Raspberry Pi OS (Bookworm/Trixie) is more sensitive to cmdline.txt syntax
+
+**Recovery from boot failure**:
+```bash
+# If stuck in initramfs, check cmdline.txt
+cat /boot/cmdline.txt
+# or
+cat /boot/firmware/cmdline.txt
+
+# Remove any modules-load= parameters if present
+# The entire cmdline.txt should be a single line with no newlines
+```
+
+### USB Gadget Not Working
+
+**Problem**: USB gadget doesn't appear when connected
+
+**Checklist**:
+1. Verify `dtoverlay=dwc2` is in `/boot/config.txt`
+2. Check modules are loaded: `lsmod | grep -E "dwc2|libcomposite"`
+3. Verify UDC is available: `ls /sys/class/udc/`
+4. Check gadget setup: `ls /sys/kernel/config/usb_gadget/xbox360/`
+5. Review logs: `sudo journalctl -u xbox360-emulator -n 50`
+
+For more troubleshooting, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Contributing
 

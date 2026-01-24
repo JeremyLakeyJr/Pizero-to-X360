@@ -73,35 +73,46 @@ else
     echo "dwc2 overlay already configured in ${CONFIG_TXT}"
 fi
 
-# Check /boot/cmdline.txt for dwc2 module
-CMDLINE_TXT="/boot/cmdline.txt"
-if [ -f "/boot/firmware/cmdline.txt" ]; then
-    CMDLINE_TXT="/boot/firmware/cmdline.txt"
-fi
-
-if ! grep -q "modules-load=dwc2" "${CMDLINE_TXT}" 2>/dev/null; then
-    echo "Adding dwc2 module to ${CMDLINE_TXT}..."
-    sed -i 's/rootwait/rootwait modules-load=dwc2/' "${CMDLINE_TXT}"
-else
-    echo "dwc2 module already configured in ${CMDLINE_TXT}"
-fi
-
 echo ""
-echo "Step 5: Loading kernel modules..."
-modprobe libcomposite 2>/dev/null || echo "libcomposite will be available after reboot"
-modprobe usb_f_hid 2>/dev/null || echo "usb_f_hid will be available after reboot"
+echo "Step 5: Configuring kernel modules to load at boot..."
 
-# Add modules to load at boot
+# Add modules to /etc/modules for auto-loading at boot
+# This is the safe method - no modification of cmdline.txt needed
+if ! grep -q "^dwc2" /etc/modules 2>/dev/null; then
+    echo "dwc2" >> /etc/modules
+    echo "Added dwc2 to /etc/modules"
+fi
 if ! grep -q "^libcomposite" /etc/modules 2>/dev/null; then
     echo "libcomposite" >> /etc/modules
+    echo "Added libcomposite to /etc/modules"
 fi
 if ! grep -q "^usb_f_hid" /etc/modules 2>/dev/null; then
     echo "usb_f_hid" >> /etc/modules
+    echo "Added usb_f_hid to /etc/modules"
+fi
+
+# Try to load modules now (may fail if dwc2 overlay not active yet)
+echo "Attempting to load kernel modules..."
+if modprobe dwc2 2>/dev/null; then
+    echo "[OK] dwc2 module loaded"
+else
+    echo "[WARN] dwc2 will be available after reboot"
+fi
+if modprobe libcomposite 2>/dev/null; then
+    echo "[OK] libcomposite module loaded"
+else
+    echo "[WARN] libcomposite will be available after reboot"
+fi
+if modprobe usb_f_hid 2>/dev/null; then
+    echo "[OK] usb_f_hid module loaded"
+else
+    echo "[WARN] usb_f_hid will be available after reboot"
 fi
 
 echo ""
 echo "Step 6: Setting up scripts..."
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR=$(dirname "${SCRIPT_DIR}")
 
 # Make scripts executable
 chmod +x "${SCRIPT_DIR}/setup_gadget.sh"
@@ -109,33 +120,34 @@ chmod +x "${SCRIPT_DIR}/teardown_gadget.sh"
 
 # Create systemd service (optional)
 echo ""
-read -p "Create systemd service for auto-start? [y/N] " -n 1 -r
+read -p "Install systemd service for auto-start on boot? [y/N] " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    INSTALL_DIR=$(dirname "${SCRIPT_DIR}")
+    echo "Installing systemd service..."
     
-    cat > /etc/systemd/system/xbox360-emulator.service << EOF
-[Unit]
-Description=Xbox 360 Controller Emulator
-After=network.target
-
-[Service]
-Type=simple
-ExecStartPre=${SCRIPT_DIR}/setup_gadget.sh
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/src/xbox360_emulator.py
-ExecStopPost=${SCRIPT_DIR}/teardown_gadget.sh
-Restart=on-failure
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+    # Use the template and substitute paths
+    sed -e "s|/home/pi/Pizero-to-X360|${INSTALL_DIR}|g" \
+        "${SCRIPT_DIR}/xbox360-emulator.service" > /etc/systemd/system/xbox360-emulator.service
+    
     systemctl daemon-reload
+    
     echo ""
-    echo "Systemd service created: xbox360-emulator.service"
-    echo "Enable with: sudo systemctl enable xbox360-emulator"
-    echo "Start with:  sudo systemctl start xbox360-emulator"
+    read -p "Enable service to start automatically on boot? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        systemctl enable xbox360-emulator.service
+        echo "[OK] Service enabled - will start automatically on boot"
+    else
+        echo "Service installed but not enabled"
+        echo "Enable later with: sudo systemctl enable xbox360-emulator.service"
+    fi
+    
+    echo ""
+    echo "Service commands:"
+    echo "  Start:   sudo systemctl start xbox360-emulator"
+    echo "  Stop:    sudo systemctl stop xbox360-emulator"
+    echo "  Status:  sudo systemctl status xbox360-emulator"
+    echo "  Logs:    sudo journalctl -u xbox360-emulator -f"
 fi
 
 echo ""

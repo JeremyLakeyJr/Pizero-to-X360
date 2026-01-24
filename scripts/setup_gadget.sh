@@ -51,22 +51,49 @@ fi
 
 # Load required modules
 echo "Loading kernel modules..."
-modprobe libcomposite 2>/dev/null || true
-modprobe usb_f_hid 2>/dev/null || true
+# libcomposite is required for USB gadget functionality
+if ! modprobe libcomposite 2>/dev/null; then
+    echo "Error: Failed to load libcomposite module"
+    echo "Make sure the module is available and you're running as root"
+    exit 1
+fi
+# usb_f_hid provides HID function support (optional, may already be built-in)
+if ! modprobe usb_f_hid 2>/dev/null; then
+    echo "Warning: Failed to load usb_f_hid module (may be built-in or not critical)"
+fi
+# dwc2 is the USB OTG controller driver for Pi Zero
+if ! modprobe dwc2 2>/dev/null; then
+    echo "Warning: Failed to load dwc2 module"
+    echo "Make sure dtoverlay=dwc2 is set in /boot/config.txt"
+fi
 
-# Clean up existing gadget
+# Clean up existing gadget (make idempotent)
 if [ -d "${GADGET_PATH}" ]; then
-    echo "Removing existing gadget configuration..."
-    ./teardown_gadget.sh 2>/dev/null || {
-        # Manual cleanup
-        echo "" > "${GADGET_PATH}/UDC" 2>/dev/null || true
+    echo "Existing gadget found - cleaning up..."
+    
+    # Try using teardown script first
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [ -f "${SCRIPT_DIR}/teardown_gadget.sh" ]; then
+        "${SCRIPT_DIR}/teardown_gadget.sh" 2>/dev/null || true
+    fi
+    
+    # Manual cleanup if gadget still exists
+    if [ -d "${GADGET_PATH}" ]; then
+        # Unbind from UDC
+        if [ -f "${GADGET_PATH}/UDC" ]; then
+            echo "" > "${GADGET_PATH}/UDC" 2>/dev/null || true
+        fi
+        
+        # Remove symlinks and directories
         rm -f "${GADGET_PATH}/configs/c.1/hid.usb0" 2>/dev/null || true
         rmdir "${GADGET_PATH}/configs/c.1/strings/0x409" 2>/dev/null || true
         rmdir "${GADGET_PATH}/configs/c.1" 2>/dev/null || true
         rmdir "${GADGET_PATH}/functions/hid.usb0" 2>/dev/null || true
         rmdir "${GADGET_PATH}/strings/0x409" 2>/dev/null || true
         rmdir "${GADGET_PATH}" 2>/dev/null || true
-    }
+        
+        echo "Cleanup complete"
+    fi
 fi
 
 echo "Creating USB gadget: ${GADGET_NAME}"
