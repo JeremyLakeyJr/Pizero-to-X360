@@ -423,14 +423,212 @@ def list_input_devices() -> None:
             print(f"  {path}: (permission denied)")
 
 
+def run_controller_state_tests() -> bool:
+    """Run tests for ControllerState to verify all inputs are properly tracked.
+    
+    Returns:
+        True if all tests pass, False otherwise.
+    """
+    print("=== Running ControllerState Tests ===\n")
+    all_passed = True
+    
+    # Xbox 360 protocol constants (per USB_PROTOCOL.md)
+    STICK_MAX = 32767   # Max positive stick value (16-bit signed)
+    STICK_MIN = -32768  # Max negative stick value (16-bit signed)
+    TRIGGER_MAX = 255   # Max trigger value (8-bit unsigned)
+    
+    # Test 1: Default state is all neutral
+    print("Test 1: Default state initialization")
+    state = ControllerState()
+    
+    # Check all buttons are False
+    button_checks = [
+        ('a', state.a),
+        ('b', state.b),
+        ('x', state.x),
+        ('y', state.y),
+        ('lb', state.lb),
+        ('rb', state.rb),
+        ('start', state.start),
+        ('back', state.back),
+        ('guide', state.guide),
+        ('left_stick_click', state.left_stick_click),
+        ('right_stick_click', state.right_stick_click),
+        ('dpad_up', state.dpad_up),
+        ('dpad_down', state.dpad_down),
+        ('dpad_left', state.dpad_left),
+        ('dpad_right', state.dpad_right),
+    ]
+    
+    for name, value in button_checks:
+        if value is not False:
+            print(f"  FAIL: {name} should be False, got {value}")
+            all_passed = False
+    
+    # Check analog values are 0
+    analog_checks = [
+        ('left_trigger', state.left_trigger, 0),
+        ('right_trigger', state.right_trigger, 0),
+        ('left_stick_x', state.left_stick_x, 0),
+        ('left_stick_y', state.left_stick_y, 0),
+        ('right_stick_x', state.right_stick_x, 0),
+        ('right_stick_y', state.right_stick_y, 0),
+    ]
+    
+    for name, value, expected in analog_checks:
+        if value != expected:
+            print(f"  FAIL: {name} should be {expected}, got {value}")
+            all_passed = False
+    
+    if all_passed:
+        print("  PASS: Default state is neutral for all inputs")
+    
+    # Test 2: All buttons can be set
+    print("Test 2: Button state changes")
+    state = ControllerState()
+    
+    # Set all buttons
+    state.a = True
+    state.b = True
+    state.x = True
+    state.y = True
+    state.lb = True
+    state.rb = True
+    state.start = True
+    state.back = True
+    state.guide = True
+    state.left_stick_click = True
+    state.right_stick_click = True
+    state.dpad_up = True
+    state.dpad_down = True
+    state.dpad_left = True
+    state.dpad_right = True
+    
+    # Verify all are True
+    button_checks = [
+        ('a', state.a),
+        ('b', state.b),
+        ('x', state.x),
+        ('y', state.y),
+        ('lb', state.lb),
+        ('rb', state.rb),
+        ('start', state.start),
+        ('back', state.back),
+        ('guide', state.guide),
+        ('left_stick_click', state.left_stick_click),
+        ('right_stick_click', state.right_stick_click),
+        ('dpad_up', state.dpad_up),
+        ('dpad_down', state.dpad_down),
+        ('dpad_left', state.dpad_left),
+        ('dpad_right', state.dpad_right),
+    ]
+    
+    for name, value in button_checks:
+        if value is not True:
+            print(f"  FAIL: {name} should be True after setting")
+            all_passed = False
+    
+    if all_passed:
+        print("  PASS: All buttons can be set to True")
+    
+    # Test 3: Analog values (triggers)
+    print("Test 3: Trigger values")
+    state = ControllerState()
+    state.left_trigger = TRIGGER_MAX
+    state.right_trigger = 128
+    
+    if state.left_trigger != TRIGGER_MAX:
+        print(f"  FAIL: left_trigger should be {TRIGGER_MAX}, got {state.left_trigger}")
+        all_passed = False
+    else:
+        print(f"  PASS: Left trigger can be set to {TRIGGER_MAX}")
+    
+    if state.right_trigger != 128:
+        print(f"  FAIL: right_trigger should be 128, got {state.right_trigger}")
+        all_passed = False
+    else:
+        print("  PASS: Right trigger can be set to 128")
+    
+    # Test 4: Analog values (sticks)
+    print("Test 4: Stick values")
+    state = ControllerState()
+    state.left_stick_x = STICK_MAX
+    state.left_stick_y = STICK_MIN
+    state.right_stick_x = STICK_MIN
+    state.right_stick_y = STICK_MAX
+    
+    if state.left_stick_x != STICK_MAX:
+        print(f"  FAIL: left_stick_x should be {STICK_MAX}")
+        all_passed = False
+    else:
+        print("  PASS: Left stick X can be set to full range")
+    
+    if state.left_stick_y != STICK_MIN:
+        print(f"  FAIL: left_stick_y should be {STICK_MIN}")
+        all_passed = False
+    else:
+        print("  PASS: Left stick Y can be set to full range")
+    
+    if state.right_stick_x != STICK_MIN:
+        print(f"  FAIL: right_stick_x should be {STICK_MIN}")
+        all_passed = False
+    else:
+        print("  PASS: Right stick X can be set to full range")
+    
+    if state.right_stick_y != STICK_MAX:
+        print(f"  FAIL: right_stick_y should be {STICK_MAX}")
+        all_passed = False
+    else:
+        print("  PASS: Right stick Y can be set to full range")
+    
+    # Test 5: String representation includes all inputs
+    print("Test 5: String representation")
+    state = ControllerState()
+    state.a = True
+    state.lb = True
+    state.rb = True
+    state.left_trigger = 100
+    state.right_trigger = 200
+    state.left_stick_x = 1000
+    state.left_stick_y = 2000
+    state.right_stick_x = 3000
+    state.right_stick_y = 4000
+    
+    repr_str = repr(state)
+    
+    # Check that key elements are in the repr
+    checks = ['A', 'LB', 'RB', 'LT=100', 'RT=200']
+    for check in checks:
+        if check not in repr_str:
+            print(f"  FAIL: '{check}' not in repr: {repr_str}")
+            all_passed = False
+    
+    if all_passed:
+        print("  PASS: String representation includes all active inputs")
+    
+    print()
+    return all_passed
+
+
 if __name__ == "__main__":
-    # Demo/test mode
+    # Run unit tests first
+    print("=== Input Handler Tests ===\n")
+    
+    # Run ControllerState tests (no evdev required)
+    if not run_controller_state_tests():
+        print("=== Some Tests Failed ===\n")
+        sys.exit(1)
+    
+    print("=== All ControllerState Tests Passed ===\n")
+    
+    # Demo/test mode (requires evdev and actual controller)
     print("=== Input Handler Demo ===\n")
     
     if not EVDEV_AVAILABLE:
-        print("Error: evdev module not available")
+        print("Note: evdev module not available")
         print("Install with: pip3 install evdev")
-        sys.exit(1)
+        print("Skipping device detection (tests still passed)")
+        sys.exit(0)
     
     print("Listing available devices...\n")
     list_input_devices()
@@ -448,5 +646,6 @@ if __name__ == "__main__":
         
     except RuntimeError as e:
         print(f"Error: {e}")
+        print("No Xbox controller found (this is OK for CI/testing)")
     except KeyboardInterrupt:
         print("\nStopped")

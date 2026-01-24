@@ -95,6 +95,9 @@ test:
 	@echo "Running report formatter tests..."
 	$(PYTHON) $(SRC_DIR)/report_formatter.py
 	@echo ""
+	@echo "Running input handler tests..."
+	$(PYTHON) $(SRC_DIR)/input_handler.py
+	@echo ""
 	@echo "All tests passed!"
 
 # List available input devices
