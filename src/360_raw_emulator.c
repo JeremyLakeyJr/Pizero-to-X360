@@ -291,11 +291,13 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
     else if ((setup->bRequestType & USB_TYPE_MASK) == USB_TYPE_VENDOR) {
         printf("  -> VENDOR request 0x%02X\n", setup->bRequest);
         
-        /* Xbox 360 controllers respond to vendor request 0x01 during init */
+        /* Xbox 360 controllers respond to vendor request 0x01 during init
+         * TODO: Implement proper vendor request responses based on:
+         * https://www.partsnotincluded.com/understanding-the-xbox-360-wired-controllers-usb-data/
+         * For now, acknowledge with empty response which may be sufficient for PC hosts
+         */
         if (setup->bRequest == 0x01) {
             /* Return empty response for now */
-            /* TODO: Implement proper vendor request responses based on */
-            /* https://www.partsnotincluded.com/understanding-the-xbox-360-wired-controllers-usb-data/ */
             length = 0;
         } else {
             length = 0;  /* Acknowledge unknown vendor requests */
@@ -339,7 +341,7 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
             return -1;
         }
     } else {
-        /* OUT request - send status */
+        /* OUT request - read status phase (completes the control transfer) */
         struct usb_raw_ep_io io = {0};
         io.ep = 0;
         io.flags = 0;
@@ -384,7 +386,8 @@ static void *control_thread(void *arg) {
         struct usb_ctrlrequest *setup = (struct usb_ctrlrequest *)io.data;
         if (handle_control_request(setup) < 0) {
             printf("Failed to handle control request\n");
-            /* TODO: Send STALL on EP0 */
+            /* TODO: Send STALL on EP0 for proper error handling */
+            /* For now, continue without STALL which works for most cases */
         }
     }
     
@@ -414,7 +417,10 @@ static int send_report(const uint8_t *report, size_t length) {
     return ret;
 }
 
-/* Receive output report (rumble/LED) via EP1 OUT */
+/* Receive output report (rumble/LED) via EP1 OUT 
+ * TODO: Implement thread to read from EP1 OUT for rumble/LED commands
+ * Currently unused but will be needed for bidirectional communication
+ */
 static int receive_output_report(uint8_t *buffer, size_t max_length) __attribute__((unused));
 static int receive_output_report(uint8_t *buffer, size_t max_length) {
     if (ep_out_fd < 0) {
