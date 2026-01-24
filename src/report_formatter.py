@@ -286,9 +286,244 @@ def format_report_hex(report: bytes) -> str:
     return ' '.join(f'{b:02X}' for b in report)
 
 
-if __name__ == "__main__":
-    # Demo: Create and display sample reports
+def run_tests() -> bool:
+    """Run comprehensive tests for all inputs.
     
+    Returns:
+        True if all tests pass, False otherwise.
+    """
+    print("=== Running Comprehensive Input Tests ===\n")
+    all_passed = True
+    
+    # Xbox 360 protocol constants (per USB_PROTOCOL.md)
+    STICK_MAX = 32767   # Max positive stick value (16-bit signed)
+    STICK_MIN = -32768  # Max negative stick value (16-bit signed)
+    TRIGGER_MAX = 255   # Max trigger value (8-bit unsigned)
+    
+    # Test 1: Idle report structure
+    print("Test 1: Idle report structure")
+    idle = create_idle_report()
+    assert len(idle) == 20, f"Expected 20 bytes, got {len(idle)}"
+    assert idle[0] == 0x00, f"Expected report type 0x00, got {idle[0]}"
+    assert idle[1] == 0x14, f"Expected report size 0x14, got {idle[1]}"
+    print("  PASS: Idle report is 20 bytes with correct header")
+    
+    # Test 2: All face buttons (A, B, X, Y)
+    print("Test 2: Face buttons (A, B, X, Y)")
+    for btn_name, btn_setter, expected_bit in [
+        ('A', 'set_a', 12),
+        ('B', 'set_b', 13),
+        ('X', 'set_x', 14),
+        ('Y', 'set_y', 15),
+    ]:
+        report = InputReport()
+        getattr(report, btn_setter)(True)
+        data = report.to_bytes()
+        btn_word = data[2] | (data[3] << 8)
+        if not (btn_word & (1 << expected_bit)):
+            print(f"  FAIL: {btn_name} button not set correctly")
+            all_passed = False
+        else:
+            print(f"  PASS: {btn_name} button (bit {expected_bit})")
+    
+    # Test 3: Bumpers (LB, RB)
+    print("Test 3: Bumpers (LB, RB)")
+    for btn_name, btn_setter, expected_bit in [
+        ('LB', 'set_lb', 8),
+        ('RB', 'set_rb', 9),
+    ]:
+        report = InputReport()
+        getattr(report, btn_setter)(True)
+        data = report.to_bytes()
+        btn_word = data[2] | (data[3] << 8)
+        if not (btn_word & (1 << expected_bit)):
+            print(f"  FAIL: {btn_name} button not set correctly")
+            all_passed = False
+        else:
+            print(f"  PASS: {btn_name} button (bit {expected_bit})")
+    
+    # Test 4: Triggers (analog, 0-255)
+    print("Test 4: Triggers (LT, RT)")
+    report = InputReport()
+    report.set_left_trigger(TRIGGER_MAX)  # Full press
+    report.set_right_trigger(128)  # Half press
+    data = report.to_bytes()
+    if data[4] != TRIGGER_MAX:
+        print(f"  FAIL: Left trigger expected {TRIGGER_MAX}, got {data[4]}")
+        all_passed = False
+    else:
+        print(f"  PASS: Left trigger = {TRIGGER_MAX} (full press)")
+    if data[5] != 128:
+        print(f"  FAIL: Right trigger expected 128, got {data[5]}")
+        all_passed = False
+    else:
+        print(f"  PASS: Right trigger = 128 (half press)")
+    
+    # Test 5: D-pad
+    print("Test 5: D-pad")
+    for btn_name, btn_setter, expected_bit in [
+        ('Up', 'set_dpad_up', 0),
+        ('Down', 'set_dpad_down', 1),
+        ('Left', 'set_dpad_left', 2),
+        ('Right', 'set_dpad_right', 3),
+    ]:
+        report = InputReport()
+        getattr(report, btn_setter)(True)
+        data = report.to_bytes()
+        btn_word = data[2] | (data[3] << 8)
+        if not (btn_word & (1 << expected_bit)):
+            print(f"  FAIL: D-pad {btn_name} not set correctly")
+            all_passed = False
+        else:
+            print(f"  PASS: D-pad {btn_name} (bit {expected_bit})")
+    
+    # Test 6: System buttons (Start, Back, Guide)
+    print("Test 6: System buttons (Start, Back, Guide)")
+    for btn_name, btn_setter, expected_bit in [
+        ('Start', 'set_start', 4),
+        ('Back', 'set_back', 5),
+        ('Guide', 'set_guide', 10),
+    ]:
+        report = InputReport()
+        getattr(report, btn_setter)(True)
+        data = report.to_bytes()
+        btn_word = data[2] | (data[3] << 8)
+        if not (btn_word & (1 << expected_bit)):
+            print(f"  FAIL: {btn_name} button not set correctly")
+            all_passed = False
+        else:
+            print(f"  PASS: {btn_name} button (bit {expected_bit})")
+    
+    # Test 7: Stick clicks
+    print("Test 7: Stick clicks (LS, RS)")
+    for btn_name, btn_setter, expected_bit in [
+        ('LS', 'set_left_stick_click', 6),
+        ('RS', 'set_right_stick_click', 7),
+    ]:
+        report = InputReport()
+        getattr(report, btn_setter)(True)
+        data = report.to_bytes()
+        btn_word = data[2] | (data[3] << 8)
+        if not (btn_word & (1 << expected_bit)):
+            print(f"  FAIL: {btn_name} click not set correctly")
+            all_passed = False
+        else:
+            print(f"  PASS: {btn_name} click (bit {expected_bit})")
+    
+    # Test 8: Analog sticks
+    print("Test 8: Analog sticks")
+    report = InputReport()
+    report.set_left_stick(STICK_MAX, STICK_MIN)   # Full right, full down
+    report.set_right_stick(STICK_MIN, STICK_MAX)  # Full left, full up
+    data = report.to_bytes()
+    # Left stick X (bytes 6-7, little endian)
+    lx = struct.unpack('<h', data[6:8])[0]
+    ly = struct.unpack('<h', data[8:10])[0]
+    rx = struct.unpack('<h', data[10:12])[0]
+    ry = struct.unpack('<h', data[12:14])[0]
+    if lx != STICK_MAX:
+        print(f"  FAIL: Left stick X expected {STICK_MAX}, got {lx}")
+        all_passed = False
+    else:
+        print(f"  PASS: Left stick X = {STICK_MAX} (full right)")
+    if ly != STICK_MIN:
+        print(f"  FAIL: Left stick Y expected {STICK_MIN}, got {ly}")
+        all_passed = False
+    else:
+        print(f"  PASS: Left stick Y = {STICK_MIN} (full down)")
+    if rx != STICK_MIN:
+        print(f"  FAIL: Right stick X expected {STICK_MIN}, got {rx}")
+        all_passed = False
+    else:
+        print(f"  PASS: Right stick X = {STICK_MIN} (full left)")
+    if ry != STICK_MAX:
+        print(f"  FAIL: Right stick Y expected {STICK_MAX}, got {ry}")
+        all_passed = False
+    else:
+        print(f"  PASS: Right stick Y = {STICK_MAX} (full up)")
+    
+    # Test 9: Combined inputs (simulate real gameplay)
+    print("Test 9: Combined inputs (realistic gameplay scenario)")
+    report = InputReport()
+    report.set_a(True)           # Jump
+    report.set_lb(True)          # Left bumper
+    report.set_rb(True)          # Right bumper
+    report.set_left_trigger(200) # Aim
+    report.set_right_trigger(TRIGGER_MAX) # Fire
+    report.set_left_stick(16000, 8000)  # Moving
+    report.set_right_stick(-5000, 3000) # Aiming
+    data = report.to_bytes()
+    
+    btn_word = data[2] | (data[3] << 8)
+    if not (btn_word & (1 << 12)):  # A
+        print(f"  FAIL: A button not set in combined test")
+        all_passed = False
+    if not (btn_word & (1 << 8)):   # LB
+        print(f"  FAIL: LB button not set in combined test")
+        all_passed = False
+    if not (btn_word & (1 << 9)):   # RB
+        print(f"  FAIL: RB button not set in combined test")
+        all_passed = False
+    if data[4] != 200:  # LT
+        print(f"  FAIL: Left trigger expected 200, got {data[4]}")
+        all_passed = False
+    if data[5] != TRIGGER_MAX:  # RT
+        print(f"  FAIL: Right trigger expected {TRIGGER_MAX}, got {data[5]}")
+        all_passed = False
+    print(f"  PASS: Combined inputs work correctly")
+    
+    # Test 10: Trigger value clamping
+    print("Test 10: Trigger value clamping")
+    report = InputReport()
+    report.set_left_trigger(300)   # Should clamp to 255
+    report.set_right_trigger(-10)  # Should clamp to 0
+    data = report.to_bytes()
+    if data[4] != TRIGGER_MAX:
+        print(f"  FAIL: Left trigger should clamp to {TRIGGER_MAX}, got {data[4]}")
+        all_passed = False
+    else:
+        print(f"  PASS: Left trigger clamped 300->{TRIGGER_MAX}")
+    if data[5] != 0:
+        print(f"  FAIL: Right trigger should clamp to 0, got {data[5]}")
+        all_passed = False
+    else:
+        print(f"  PASS: Right trigger clamped -10->0")
+    
+    # Test 11: Output report parsing
+    print("Test 11: Output report parsing")
+    rumble_data = bytes([0x00, 0x08, 0x00, 0xFF, 0x80, 0x00, 0x00, 0x00])
+    parsed = OutputReport.parse(rumble_data)
+    if parsed['type'] != 'rumble':
+        print(f"  FAIL: Expected rumble type, got {parsed['type']}")
+        all_passed = False
+    elif parsed['left_motor'] != 255 or parsed['right_motor'] != 128:
+        print(f"  FAIL: Wrong motor values: {parsed}")
+        all_passed = False
+    else:
+        print(f"  PASS: Rumble report parsed correctly")
+    
+    led_data = bytes([0x01, 0x03, 0x06])
+    parsed = OutputReport.parse(led_data)
+    if parsed['type'] != 'led' or parsed['pattern'] != 6:
+        print(f"  FAIL: LED report not parsed correctly: {parsed}")
+        all_passed = False
+    else:
+        print(f"  PASS: LED report parsed correctly")
+    
+    print()
+    return all_passed
+
+
+if __name__ == "__main__":
+    # Run comprehensive tests
+    if run_tests():
+        print("=== All Tests Passed ===\n")
+    else:
+        print("=== Some Tests Failed ===\n")
+        import sys
+        sys.exit(1)
+    
+    # Demo: Create and display sample reports
     print("=== Xbox 360 Input Report Formatter Demo ===\n")
     
     # Idle report
@@ -313,6 +548,24 @@ if __name__ == "__main__":
     report.set_left_stick(32767, 0)  # Full right
     report.set_left_trigger(128)
     report.set_right_trigger(128)
+    data = report.to_bytes()
+    print(f"  {format_report_hex(data)}")
+    print(f"  {report}")
+    
+    # Report with bumpers pressed
+    print("\nReport with LB + RB pressed:")
+    report = InputReport()
+    report.set_lb(True)
+    report.set_rb(True)
+    data = report.to_bytes()
+    print(f"  {format_report_hex(data)}")
+    print(f"  {report}")
+    
+    # Report with full triggers
+    print("\nReport with full triggers (LT=255, RT=255):")
+    report = InputReport()
+    report.set_left_trigger(255)
+    report.set_right_trigger(255)
     data = report.to_bytes()
     print(f"  {format_report_hex(data)}")
     print(f"  {report}")

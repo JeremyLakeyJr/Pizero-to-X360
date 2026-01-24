@@ -2,6 +2,20 @@
 
 This project turns a Raspberry Pi Zero (or Zero 2 W) into a USB adapter that reads input from a modern Xbox One/Series controller and emulates a genuine wired Xbox 360 controller. This allows you to use newer controllers with an original Xbox 360 console.
 
+## Supported Inputs
+
+This emulator supports **all Xbox 360 controller inputs**:
+
+| Input Type | Supported Inputs |
+|------------|------------------|
+| **Face Buttons** | A, B, X, Y |
+| **Bumpers** | Left Bumper (LB), Right Bumper (RB) |
+| **Triggers** | Left Trigger (LT), Right Trigger (RT) - Full 8-bit analog (0-255) |
+| **D-Pad** | Up, Down, Left, Right |
+| **Analog Sticks** | Left Stick (X/Y), Right Stick (X/Y) - Full 16-bit precision |
+| **Stick Clicks** | Left Stick Click (LS), Right Stick Click (RS) |
+| **System Buttons** | Start, Back, Xbox Guide |
+
 ## Overview
 
 ```
