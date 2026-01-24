@@ -180,7 +180,7 @@ class InputReport:
         #   H = unsigned short (2 bytes)
         #   h = signed short (2 bytes)
         report = struct.pack(
-            '<BBHBB hhhh xxxxxx',
+            '<BBHBB hhhh 6x',
             self.REPORT_TYPE,      # Byte 0: Report type
             self.REPORT_SIZE,      # Byte 1: Report size
             self._buttons,         # Bytes 2-3: Button bitmap
@@ -190,7 +190,7 @@ class InputReport:
             self._left_stick_y,    # Bytes 8-9: Left stick Y
             self._right_stick_x,   # Bytes 10-11: Right stick X
             self._right_stick_y,   # Bytes 12-13: Right stick Y
-            # Bytes 14-19: Reserved (padding via 'xxxxxx')
+            # Bytes 14-19: Reserved (padding via '6x')
         )
         
         return report

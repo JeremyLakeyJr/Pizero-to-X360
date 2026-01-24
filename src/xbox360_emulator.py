@@ -156,7 +156,8 @@ class Xbox360GadgetConfigFS:
                     modules = f.read()
                 if 'libcomposite' not in modules:
                     logger.warning("libcomposite module not loaded. Loading...")
-                    os.system('modprobe libcomposite')
+                    import subprocess
+                    subprocess.run(['modprobe', 'libcomposite'], check=False)
             except (OSError, PermissionError):
                 pass
     
