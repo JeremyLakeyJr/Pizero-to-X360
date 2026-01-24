@@ -1,0 +1,45 @@
+# Xbox 360 Controller Emulator - Systemd Service
+#
+# This systemd service automatically starts the Xbox 360 controller emulator
+# on boot and manages the USB gadget configuration.
+#
+# Installation:
+#   1. The install.sh script will automatically install this service
+#   2. Or manually: sudo cp scripts/xbox360-emulator.service /etc/systemd/system/
+#   3. Update paths in the service file to match your installation directory
+#   4. sudo systemctl daemon-reload
+#   5. sudo systemctl enable xbox360-emulator.service
+#   6. sudo systemctl start xbox360-emulator.service
+#
+# Usage:
+#   Start:   sudo systemctl start xbox360-emulator
+#   Stop:    sudo systemctl stop xbox360-emulator
+#   Status:  sudo systemctl status xbox360-emulator
+#   Logs:    sudo journalctl -u xbox360-emulator -f
+#   Enable:  sudo systemctl enable xbox360-emulator
+#   Disable: sudo systemctl disable xbox360-emulator
+#
+
+[Unit]
+Description=Xbox 360 Controller Emulator for Raspberry Pi Zero
+Documentation=https://github.com/JeremyLakeyJr/Pizero-to-X360
+After=network.target multi-user.target
+Wants=network.target
+
+[Service]
+Type=simple
+# Setup USB gadget first
+ExecStartPre=/bin/sh -c 'if ! /usr/bin/test -d /sys/kernel/config/usb_gadget/xbox360; then /home/pi/Pizero-to-X360/scripts/setup_gadget.sh; fi'
+# Start the emulator
+ExecStart=/usr/bin/python3 /home/pi/Pizero-to-X360/src/xbox360_emulator.py
+# Clean up on stop
+ExecStopPost=/home/pi/Pizero-to-X360/scripts/teardown_gadget.sh
+Restart=on-failure
+RestartSec=5
+User=root
+WorkingDirectory=/home/pi/Pizero-to-X360
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
