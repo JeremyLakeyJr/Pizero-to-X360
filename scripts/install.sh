@@ -94,19 +94,19 @@ fi
 # Try to load modules now (may fail if dwc2 overlay not active yet)
 echo "Attempting to load kernel modules..."
 if modprobe dwc2 2>/dev/null; then
-    echo "✓ dwc2 module loaded"
+    echo "[OK] dwc2 module loaded"
 else
-    echo "! dwc2 will be available after reboot"
+    echo "[WARN] dwc2 will be available after reboot"
 fi
 if modprobe libcomposite 2>/dev/null; then
-    echo "✓ libcomposite module loaded"
+    echo "[OK] libcomposite module loaded"
 else
-    echo "! libcomposite will be available after reboot"
+    echo "[WARN] libcomposite will be available after reboot"
 fi
 if modprobe usb_f_hid 2>/dev/null; then
-    echo "✓ usb_f_hid module loaded"
+    echo "[OK] usb_f_hid module loaded"
 else
-    echo "! usb_f_hid will be available after reboot"
+    echo "[WARN] usb_f_hid will be available after reboot"
 fi
 
 echo ""
@@ -136,7 +136,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         systemctl enable xbox360-emulator.service
-        echo "✓ Service enabled - will start automatically on boot"
+        echo "[OK] Service enabled - will start automatically on boot"
     else
         echo "Service installed but not enabled"
         echo "Enable later with: sudo systemctl enable xbox360-emulator.service"

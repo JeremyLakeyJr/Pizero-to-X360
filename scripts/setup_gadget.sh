@@ -51,14 +51,17 @@ fi
 
 # Load required modules
 echo "Loading kernel modules..."
+# libcomposite is required for USB gadget functionality
 if ! modprobe libcomposite 2>/dev/null; then
     echo "Error: Failed to load libcomposite module"
     echo "Make sure the module is available and you're running as root"
     exit 1
 fi
+# usb_f_hid provides HID function support (optional, may already be built-in)
 if ! modprobe usb_f_hid 2>/dev/null; then
-    echo "Warning: Failed to load usb_f_hid module (may not be critical)"
+    echo "Warning: Failed to load usb_f_hid module (may be built-in or not critical)"
 fi
+# dwc2 is the USB OTG controller driver for Pi Zero
 if ! modprobe dwc2 2>/dev/null; then
     echo "Warning: Failed to load dwc2 module"
     echo "Make sure dtoverlay=dwc2 is set in /boot/config.txt"

@@ -3,6 +3,10 @@
 # This systemd service automatically starts the Xbox 360 controller emulator
 # on boot and manages the USB gadget configuration.
 #
+# IMPORTANT: The paths below (/home/pi/Pizero-to-X360) are placeholders.
+# The install.sh script will automatically replace them with the actual
+# installation directory when installing the service.
+#
 # Installation:
 #   1. The install.sh script will automatically install this service
 #   2. Or manually: sudo cp scripts/xbox360-emulator.service /etc/systemd/system/
