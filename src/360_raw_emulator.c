@@ -147,10 +147,14 @@ static struct xbox360_config config_descriptor = {
 };
 
 /* String Descriptors */
-static struct usb_string_descriptor string_lang = {
+static struct usb_string_descriptor_with_data {
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+    uint16_t wData[1];  /* English (US) */
+} __attribute__((packed)) string_lang = {
     .bLength = 4,
     .bDescriptorType = USB_DT_STRING,
-    .wData = {0x0409}, /* English (US) */
+    .wData = {0x0409},
 };
 
 /* Manufacturer: "©Microsoft Corporation" */
@@ -246,8 +250,8 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                     case USB_DT_STRING:
                         printf("  -> GET_DESCRIPTOR: STRING (index %d)\n", desc_index);
                         if (desc_index == 0) {
-                            memcpy(buffer, &string_lang, string_lang.bLength);
-                            length = string_lang.bLength;
+                            memcpy(buffer, &string_lang, 4);
+                            length = 4;
                         } else if (desc_index == STRING_ID_MANUFACTURER) {
                             memcpy(buffer, manufacturer_string, manufacturer_string[0]);
                             length = manufacturer_string[0];
@@ -411,6 +415,7 @@ static int send_report(const uint8_t *report, size_t length) {
 }
 
 /* Receive output report (rumble/LED) via EP1 OUT */
+static int receive_output_report(uint8_t *buffer, size_t max_length) __attribute__((unused));
 static int receive_output_report(uint8_t *buffer, size_t max_length) {
     if (ep_out_fd < 0) {
         return -1;
