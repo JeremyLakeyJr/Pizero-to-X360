@@ -1,2 +1,16 @@
 *.pyc
 __pycache__/
+
+# C build artifacts
+bin/
+*.o
+*.ko
+*.mod.c
+*.mod
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Temporary files
+/tmp/
+*.tmp

@@ -49,7 +49,9 @@ apt-get install -y \
     python3 \
     python3-pip \
     python3-dev \
-    git
+    git \
+    build-essential \
+    linux-headers-$(uname -r) 2>/dev/null || apt-get install -y raspberrypi-kernel-headers
 
 echo ""
 echo "Step 3: Installing Python packages..."
@@ -76,43 +78,65 @@ fi
 echo ""
 echo "Step 5: Configuring kernel modules to load at boot..."
 
-# Add modules to /etc/modules for auto-loading at boot
-# This is the safe method - no modification of cmdline.txt needed
+# Add dwc2 to /etc/modules for auto-loading at boot
 if ! grep -q "^dwc2" /etc/modules 2>/dev/null; then
     echo "dwc2" >> /etc/modules
     echo "Added dwc2 to /etc/modules"
 fi
-if ! grep -q "^libcomposite" /etc/modules 2>/dev/null; then
-    echo "libcomposite" >> /etc/modules
-    echo "Added libcomposite to /etc/modules"
-fi
-if ! grep -q "^usb_f_hid" /etc/modules 2>/dev/null; then
-    echo "usb_f_hid" >> /etc/modules
-    echo "Added usb_f_hid to /etc/modules"
+
+# Add raw_gadget to /etc/modules
+if ! grep -q "^raw_gadget" /etc/modules 2>/dev/null; then
+    echo "raw_gadget" >> /etc/modules
+    echo "Added raw_gadget to /etc/modules"
 fi
 
-# Try to load modules now (may fail if dwc2 overlay not active yet)
+# Try to load dwc2 module now (may fail if overlay not active yet)
 echo "Attempting to load kernel modules..."
 if modprobe dwc2 2>/dev/null; then
     echo "[OK] dwc2 module loaded"
 else
     echo "[WARN] dwc2 will be available after reboot"
 fi
-if modprobe libcomposite 2>/dev/null; then
-    echo "[OK] libcomposite module loaded"
+
+echo ""
+echo "Step 6: Building and installing raw-gadget module..."
+
+# Check if raw-gadget is already available
+if [ -c /dev/raw-gadget ] && lsmod | grep -q raw_gadget; then
+    echo "raw-gadget module already installed and loaded"
 else
-    echo "[WARN] libcomposite will be available after reboot"
-fi
-if modprobe usb_f_hid 2>/dev/null; then
-    echo "[OK] usb_f_hid module loaded"
-else
-    echo "[WARN] usb_f_hid will be available after reboot"
+    echo "Building raw-gadget from source..."
+    
+    # Clone if not exists
+    if [ ! -d /tmp/raw-gadget ]; then
+        cd /tmp
+        git clone https://github.com/xairy/raw-gadget.git
+    fi
+    
+    # Build and install
+    cd /tmp/raw-gadget
+    make clean || true
+    make
+    make install
+    
+    # Try to load the module
+    if modprobe raw_gadget 2>/dev/null; then
+        echo "[OK] raw_gadget module loaded"
+    else
+        echo "[WARN] raw_gadget will be available after reboot"
+    fi
 fi
 
 echo ""
-echo "Step 6: Setting up scripts..."
+echo "Step 7: Building C emulator..."
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR=$(dirname "${SCRIPT_DIR}")
+
+cd "${INSTALL_DIR}"
+make build || echo "Warning: Failed to build C emulator. Build manually with 'make build' later."
+
+echo ""
+echo "Step 8: Setting up scripts..."
 
 # Make scripts executable
 chmod +x "${SCRIPT_DIR}/setup_gadget.sh"
@@ -127,6 +151,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     
     # Use the template and substitute paths
     sed -e "s|/home/pi/Pizero-to-X360|${INSTALL_DIR}|g" \
+        -e "s|/home/lakey/Pizero-to-X360|${INSTALL_DIR}|g" \
         "${SCRIPT_DIR}/xbox360-emulator.service" > /etc/systemd/system/xbox360-emulator.service
     
     systemctl daemon-reload
@@ -158,9 +183,10 @@ echo ""
 echo "IMPORTANT: A reboot is required for USB gadget mode to work."
 echo ""
 echo "After reboot:"
-echo "  1. Run: sudo ${SCRIPT_DIR}/setup_gadget.sh"
-echo "  2. Run: sudo python3 $(dirname "${SCRIPT_DIR}")/src/xbox360_emulator.py"
-echo "  3. Connect Pi Zero to Xbox 360 via USB"
+echo "  1. Verify raw-gadget: ls -l /dev/raw-gadget"
+echo "  2. Run emulator: sudo ${INSTALL_DIR}/bin/xbox360_raw_emulator"
+echo "  3. Connect Pi Zero to Xbox 360 or PC via USB"
+echo "  4. On PC: Check 'dmesg | grep xpad' for driver binding"
 echo ""
 read -p "Reboot now? [y/N] " -n 1 -r
 echo

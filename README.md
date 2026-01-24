@@ -30,6 +30,29 @@ The Pi Zero acts as a translator:
 - **Input side**: Reads from Xbox One/Series controller via USB (using a USB hub) or Bluetooth
 - **Output side**: Emulates a genuine wired Xbox 360 controller using USB gadget mode
 
+## Why Raw-Gadget?
+
+This project uses [raw-gadget](https://github.com/xairy/raw-gadget) for low-level USB emulation instead of the standard libcomposite/g_hid approach. Here's why:
+
+**The Problem with libcomposite/g_hid:**
+- Standard HID gadget mode creates a device that appears in `lsusb` with the correct VID/PID (0x045E:0x028E)
+- However, the Linux `xpad` driver (used on PCs) and Xbox 360 consoles **do not recognize it**
+- No `/dev/input/js*` device is created, and the controller doesn't work
+
+**Why xpad doesn't bind:**
+- Xbox 360 wired controllers use a **vendor-specific class** (0xFF), not standard HID
+- They require specific **control transfers** during initialization (vendor requests)
+- The **report descriptor format** is non-standard (not a typical HID descriptor)
+- The **input report format** must be exactly 20 bytes with a specific structure
+- **Periodic keep-alive** messages are needed
+- **Endpoint behavior** must match the original controller precisely
+
+**The raw-gadget solution:**
+- Provides low-level control over USB descriptors, endpoints, and control transfers
+- Allows implementation of the exact Xbox 360 wired protocol
+- Based on [CasperVM/360-raw-gadget](https://github.com/CasperVM/360-raw-gadget), proven to work with xpad
+- Enables proper binding on both Linux PCs and Xbox 360 consoles
+
 ## Hardware Requirements
 
 - **Raspberry Pi Zero** or **Pi Zero 2 W** (with OTG-capable USB port)
@@ -79,8 +102,6 @@ This is the safe, modern method recommended for Raspberry Pi OS Bookworm and new
 Add kernel modules to `/etc/modules` to auto-load at boot:
 ```bash
 echo "dwc2" | sudo tee -a /etc/modules
-echo "libcomposite" | sudo tee -a /etc/modules
-echo "usb_f_hid" | sudo tee -a /etc/modules
 ```
 
 **Why this method?**: 
@@ -88,32 +109,78 @@ echo "usb_f_hid" | sudo tee -a /etc/modules
 - Using `/etc/modules` is safer and more maintainable
 - The `dtoverlay=dwc2` in `config.txt` properly enables the USB OTG hardware
 
-### 3. Install Dependencies
+### 3. Install System Dependencies
 
 ```bash
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install dependencies
-sudo apt install -y python3-pip python3-dev git
+# Install dependencies for raw-gadget and compilation
+sudo apt install -y \
+    python3-pip \
+    python3-dev \
+    git \
+    build-essential \
+    linux-headers-$(uname -r) \
+    raspberrypi-kernel-headers
+
+# Install Python packages
 sudo pip3 install evdev pyusb
 
 # Optional: For Bluetooth support
 sudo apt install -y bluetooth bluez python3-dbus
 ```
 
-### 4. Clone and Install
+### 4. Build and Install raw-gadget Module
+
+The raw-gadget kernel module provides low-level USB gadget control:
+
+```bash
+# Clone raw-gadget repository
+cd /tmp
+git clone https://github.com/xairy/raw-gadget.git
+cd raw-gadget
+
+# Build the module
+make
+
+# Install the module
+sudo make install
+
+# Load the module
+sudo modprobe raw_gadget
+
+# Add to /etc/modules for auto-loading
+echo "raw_gadget" | sudo tee -a /etc/modules
+```
+
+**Verify installation:**
+```bash
+# Check if module is loaded
+lsmod | grep raw_gadget
+
+# Check if device is available
+ls -l /dev/raw-gadget
+```
+
+### 5. Clone and Install Project
 
 ```bash
 git clone https://github.com/JeremyLakeyJr/Pizero-to-X360.git
 cd Pizero-to-X360
+
+# Build the C emulator
+make build
+
+# Run installation script
 sudo ./scripts/install.sh
 ```
 
 The `install.sh` script will:
 - Configure boot settings safely (no cmdline.txt modifications)
+- Verify raw-gadget installation
+- Build the raw-gadget emulator binary
 - Install all dependencies
-- Set up modules for auto-loading
 - Optionally create and enable a systemd service for automatic startup
 
 ### 5. Enable Automatic Startup (Optional)
@@ -138,13 +205,12 @@ sudo journalctl -u xbox360-emulator.service -f
 If you prefer to run manually instead of using the systemd service:
 
 ```bash
-# After reboot, set up the USB gadget
-sudo ./scripts/setup_gadget.sh
+# After reboot, the raw-gadget module should auto-load
+# Run the emulator (it will set up the USB gadget automatically)
+sudo ./bin/xbox360_raw_emulator
 
-# Run the emulator
-sudo python3 src/xbox360_emulator.py
-
-# Connect Pi Zero to Xbox 360 via USB
+# The Python input handler runs automatically within the emulator
+# Connect Pi Zero to Xbox 360 or PC via USB
 ```
 
 ## Project Structure
@@ -155,13 +221,16 @@ Pizero-to-X360/
 ├── LICENSE                      # GPL v3 License
 ├── Makefile                     # Build and install automation
 ├── src/
-│   ├── xbox360_emulator.py      # Main emulator application
+│   ├── 360_raw_emulator.c       # C emulator using raw-gadget
+│   ├── xbox360_emulator.py      # Python input bridge (reads source controller)
 │   ├── xbox360_descriptors.py   # USB descriptors for Xbox 360 controller
 │   ├── input_handler.py         # Input reading from source controller
 │   └── report_formatter.py      # Format input reports
+├── bin/
+│   └── xbox360_raw_emulator     # Compiled C emulator binary
 ├── scripts/
-│   ├── setup_gadget.sh          # Configure USB gadget via configfs
-│   ├── teardown_gadget.sh       # Remove USB gadget configuration
+│   ├── setup_gadget.sh          # Load raw-gadget module
+│   ├── teardown_gadget.sh       # Unload raw-gadget module
 │   └── install.sh               # Full installation script
 └── docs/
     ├── USB_PROTOCOL.md          # Xbox 360 USB protocol documentation
@@ -222,33 +291,91 @@ Bit   Button
 
 ## Testing
 
-### Step 1: Verify Gadget Setup
+### Step 1: Verify raw-gadget Module
 
 ```bash
-# Check if gadget is configured
-ls /sys/kernel/config/usb_gadget/xbox360/
+# Check if raw-gadget module is loaded
+lsmod | grep raw_gadget
 
-# Check if device is recognized
-dmesg | tail -20
+# Check if device node exists
+ls -l /dev/raw-gadget
+
+# Expected output:
+# crw------- 1 root root 10, XX MMM DD HH:MM /dev/raw-gadget
 ```
 
-### Step 2: Test on PC First
+### Step 2: Test on PC First (Recommended)
 
-Before connecting to an Xbox 360, test the emulator on a PC:
+Before connecting to an Xbox 360 console, **always test on a Linux PC first**. PCs provide much better diagnostic output via dmesg and sysfs.
+
+**Connect and check:**
 ```bash
-# On PC, check for new USB device
-lsusb | grep Microsoft
+# On the Pi Zero, run the emulator
+sudo ./bin/xbox360_raw_emulator
 
-# Check input events
-cat /proc/bus/input/devices
+# On PC, after connecting Pi Zero via USB:
+# Check USB device enumeration
+lsusb | grep "Microsoft.*Xbox"
+# Expected: Bus XXX Device XXX: ID 045e:028e Microsoft Corp. Xbox 360 Controller
+
+# Check xpad driver binding (CRITICAL TEST)
+dmesg | grep -i xpad
+# Expected output:
+# [   XX.XXXXXX] usb X-X: new full-speed USB device number X using xhci_hcd
+# [   XX.XXXXXX] input: Microsoft X-Box 360 pad as /dev/input/eventX
+# [   XX.XXXXXX] xpad X-X:1.0: Xbox 360 controller
+
+# Verify input device created
+cat /proc/bus/input/devices | grep -A 10 "Xbox"
+# Should show "Xbox 360" device with event handler
+
+# List event devices
+ls -l /dev/input/event*
+# One of these should be the Xbox 360 controller
+
+# Find the correct event device
+cat /proc/bus/input/devices | grep -B 5 "Xbox"
+# Note the event number (e.g., event4)
 ```
 
-### Step 3: Test on Xbox 360
+**Test input events:**
+```bash
+# Install evtest if not available
+sudo apt install evtest
 
-1. Power off Xbox 360
+# Test the Xbox 360 controller
+sudo evtest /dev/input/eventX  # Replace X with your event number
+
+# Press buttons on source Xbox One controller
+# You should see events appearing in evtest output
+
+# Alternative: Test with jstest (for joystick interface)
+sudo apt install joystick
+sudo jstest /dev/input/js0
+```
+
+**Test in a game or online tester:**
+- Open https://html5gamepad.com in browser
+- Press buttons on source controller
+- Gamepad should appear and respond
+
+**If xpad doesn't bind:**
+- Check dmesg for USB errors
+- Verify raw-gadget module is loaded
+- Ensure C emulator is running (check with `ps aux | grep xbox360`)
+- See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed diagnostics
+
+### Step 3: Test on Xbox 360 Console
+
+Only after PC testing succeeds:
+
+1. **Power off Xbox 360 completely**
 2. Connect Pi Zero to Xbox 360 USB port
 3. Power on Xbox 360
-4. Controller LED should indicate player number
+4. Controller LED should light up and show player number (1-4)
+5. Test button inputs in Xbox 360 dashboard or game
+
+**Note:** Xbox 360 consoles are more strict than PCs about timing and protocol compliance. Always verify on PC first.
 
 ## Traffic Capture
 
@@ -270,8 +397,8 @@ Use USBPcap with Wireshark to capture traffic from a real Xbox 360 controller.
 
 1. **Single USB Port**: Pi Zero has one USB port in OTG mode. Use Bluetooth input or a special hub.
 2. **Timing Critical**: Xbox 360 expects reports every ~8ms. High system load may cause issues.
-3. **Vendor Requests**: Xbox 360 sends specific vendor control requests that must be handled.
-4. **Authentication**: Xbox 360 may perform authentication checks (typically not enforced for wired).
+3. **PC Testing First**: Always test on a Linux PC before trying with Xbox 360 console.
+4. **Raw-gadget Required**: Standard libcomposite/g_hid does not work for xpad binding.
 
 ## Troubleshooting
 
@@ -307,10 +434,19 @@ cat /boot/firmware/cmdline.txt
 
 **Checklist**:
 1. Verify `dtoverlay=dwc2` is in `/boot/config.txt`
-2. Check modules are loaded: `lsmod | grep -E "dwc2|libcomposite"`
+2. Check raw-gadget module is loaded: `lsmod | grep raw_gadget`
 3. Verify UDC is available: `ls /sys/class/udc/`
-4. Check gadget setup: `ls /sys/kernel/config/usb_gadget/xbox360/`
+4. Check emulator is running: `ps aux | grep xbox360`
 5. Review logs: `sudo journalctl -u xbox360-emulator -n 50`
+
+**Problem**: Device appears in lsusb but xpad doesn't bind
+
+**This is the main issue that raw-gadget solves!** Check:
+1. Run `dmesg | grep -i xpad` - should show "Xbox 360 controller" messages
+2. Run `ls /dev/input/js*` - should show joystick device(s)
+3. Verify raw-gadget module is loaded (not libcomposite)
+4. Check emulator binary is running: `ps aux | grep 360_raw_emulator`
+5. Test with `evtest` to confirm events work
 
 For more troubleshooting, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 

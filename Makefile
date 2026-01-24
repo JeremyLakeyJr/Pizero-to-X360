@@ -1,6 +1,7 @@
 # Xbox 360 Controller Emulator Makefile
 #
 # Usage:
+#   make build       - Build C emulator
 #   make install     - Install the emulator and dependencies
 #   make setup       - Configure USB gadget
 #   make run         - Run the emulator
@@ -14,15 +15,24 @@ PYTHON := python3
 PIP := pip3
 SCRIPT_DIR := scripts
 SRC_DIR := src
+BIN_DIR := bin
 
-.PHONY: all install setup run teardown test clean lint help
+CC := gcc
+CFLAGS := -Wall -O2 -pthread
+LDFLAGS := -lpthread
 
-all: help
+EMULATOR_SRC := $(SRC_DIR)/360_raw_emulator.c
+EMULATOR_BIN := $(BIN_DIR)/xbox360_raw_emulator
+
+.PHONY: all build install setup run teardown test clean lint help build-rawgadget
+
+all: build
 
 help:
 	@echo "Xbox 360 Controller Emulator"
 	@echo ""
 	@echo "Usage:"
+	@echo "  make build       Build C emulator binary"
 	@echo "  make install     Install dependencies"
 	@echo "  make setup       Configure USB gadget (requires root)"
 	@echo "  make run         Run the emulator (requires root)"
@@ -30,7 +40,18 @@ help:
 	@echo "  make test        Run tests"
 	@echo "  make lint        Run linter"
 	@echo "  make clean       Clean temporary files"
+	@echo "  make build-rawgadget  Build raw-gadget module"
 	@echo ""
+
+# Build C emulator
+build: $(BIN_DIR)
+	@echo "Building Xbox 360 raw-gadget emulator..."
+	$(CC) $(CFLAGS) -o $(EMULATOR_BIN) $(EMULATOR_SRC) $(LDFLAGS)
+	@echo "Built: $(EMULATOR_BIN)"
+
+# Create bin directory
+$(BIN_DIR):
+	mkdir -p $(BIN_DIR)
 
 # Install dependencies
 install:
@@ -41,7 +62,37 @@ install:
 	chmod +x $(SCRIPT_DIR)/*.sh
 	@echo ""
 	@echo "Installation complete!"
-	@echo "Run 'sudo make setup' to configure USB gadget"
+	@echo "Next steps:"
+	@echo "  1. Build raw-gadget: make build-rawgadget"
+	@echo "  2. Build C emulator: make build"
+	@echo "  3. Run: sudo make run"
+
+# Build raw-gadget kernel module
+build-rawgadget:
+	@echo "Building raw-gadget kernel module..."
+	@if [ ! -d /tmp/raw-gadget ]; then \
+		echo "Cloning raw-gadget..."; \
+		cd /tmp && git clone https://github.com/xairy/raw-gadget.git; \
+	fi
+	@echo "Compiling module..."
+	@cd /tmp/raw-gadget && make
+	@echo ""
+	@echo "raw-gadget module built: /tmp/raw-gadget/raw_gadget.ko"
+	@echo "Install with: sudo make install-rawgadget"
+
+# Install raw-gadget module
+install-rawgadget:
+	@if [ ! -f /tmp/raw-gadget/raw_gadget.ko ]; then \
+		echo "Error: raw-gadget module not built. Run 'make build-rawgadget' first."; \
+		exit 1; \
+	fi
+	@echo "Installing raw-gadget module..."
+	@cd /tmp/raw-gadget && sudo make install
+	@sudo modprobe raw_gadget
+	@echo "raw-gadget module installed and loaded"
+	@echo "Checking module:"
+	@lsmod | grep raw_gadget || echo "  Warning: Module not loaded"
+	@ls -l /dev/raw-gadget 2>/dev/null || echo "  Warning: Device node not found"
 
 # Full installation (requires root)
 install-full:
@@ -63,7 +114,12 @@ run:
 		echo "Usage: sudo make run"; \
 		exit 1; \
 	fi
-	$(PYTHON) $(SRC_DIR)/xbox360_emulator.py
+	@if [ ! -f $(EMULATOR_BIN) ]; then \
+		echo "Error: Emulator not built. Run 'make build' first."; \
+		exit 1; \
+	fi
+	@echo "Starting Xbox 360 raw-gadget emulator..."
+	$(EMULATOR_BIN)
 
 # Run in dry-run mode (no root required)
 run-dry:
@@ -125,6 +181,7 @@ clean:
 	rm -f *.pyc
 	rm -rf __pycache__
 	rm -f /tmp/xbox360_*.bin
+	rm -f $(EMULATOR_BIN)
 	@echo "Clean complete!"
 
 # Show system status
@@ -132,18 +189,18 @@ status:
 	@echo "=== System Status ==="
 	@echo ""
 	@echo "Kernel modules:"
-	@lsmod | grep -E "(libcomposite|usb_f_hid|dwc2)" || echo "  (none loaded)"
+	@lsmod | grep -E "(raw_gadget|dwc2)" || echo "  (none loaded)"
 	@echo ""
-	@echo "USB gadget:"
-	@if [ -d "/sys/kernel/config/usb_gadget/xbox360" ]; then \
-		echo "  Configured: yes"; \
-		cat /sys/kernel/config/usb_gadget/xbox360/UDC 2>/dev/null && echo "" || echo "  UDC: (not bound)"; \
+	@echo "raw-gadget device:"
+	@ls -l /dev/raw-gadget 2>/dev/null || echo "  (not available)"
+	@echo ""
+	@echo "Emulator binary:"
+	@if [ -f $(EMULATOR_BIN) ]; then \
+		echo "  Built: $(EMULATOR_BIN)"; \
+		ls -lh $(EMULATOR_BIN); \
 	else \
-		echo "  Configured: no"; \
+		echo "  Not built (run 'make build')"; \
 	fi
-	@echo ""
-	@echo "HID device:"
-	@ls -la /dev/hidg* 2>/dev/null || echo "  (not available)"
 	@echo ""
 	@echo "Input devices:"
 	@ls /dev/input/event* 2>/dev/null | head -5 || echo "  (none)"

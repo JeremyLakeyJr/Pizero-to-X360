@@ -1,9 +1,9 @@
 # Xbox 360 Controller Emulator - Systemd Service
 #
 # This systemd service automatically starts the Xbox 360 controller emulator
-# on boot and manages the USB gadget configuration.
+# on boot using raw-gadget for proper xpad driver binding.
 #
-# IMPORTANT: The paths below (/home/pi/Pizero-to-X360) are placeholders.
+# IMPORTANT: The paths below (/home/lakey/Pizero-to-X360) are placeholders.
 # The install.sh script will automatically replace them with the actual
 # installation directory when installing the service.
 #
@@ -25,23 +25,23 @@
 #
 
 [Unit]
-Description=Xbox 360 Controller Emulator for Raspberry Pi Zero
+Description=Xbox 360 Controller Emulator for Raspberry Pi Zero (raw-gadget)
 Documentation=https://github.com/JeremyLakeyJr/Pizero-to-X360
 After=network.target multi-user.target
 Wants=network.target
 
 [Service]
 Type=simple
-# Setup USB gadget first
-ExecStartPre=/bin/sh -c 'if ! /usr/bin/test -d /sys/kernel/config/usb_gadget/xbox360; then /home/pi/Pizero-to-X360/scripts/setup_gadget.sh; fi'
-# Start the emulator
-ExecStart=/usr/bin/python3 /home/pi/Pizero-to-X360/src/xbox360_emulator.py
-# Clean up on stop
-ExecStopPost=/home/pi/Pizero-to-X360/scripts/teardown_gadget.sh
+# Load raw-gadget module if not already loaded
+ExecStartPre=/bin/sh -c 'modprobe raw_gadget 2>/dev/null || true'
+# Start the raw-gadget emulator
+ExecStart=/home/lakey/Pizero-to-X360/bin/xbox360_raw_emulator
+# Unload module on stop
+ExecStopPost=/bin/sh -c 'sleep 1 && rmmod raw_gadget 2>/dev/null || true'
 Restart=on-failure
 RestartSec=5
 User=root
-WorkingDirectory=/home/pi/Pizero-to-X360
+WorkingDirectory=/home/lakey/Pizero-to-X360
 StandardOutput=journal
 StandardError=journal
 
