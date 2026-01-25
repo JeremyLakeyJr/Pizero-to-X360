@@ -41,6 +41,7 @@
 /* Raw-gadget includes */
 #define USB_RAW_IOCTL_INIT              _IOW('U', 0, struct usb_raw_init)
 #define USB_RAW_IOCTL_RUN               _IO('U', 1)
+#define USB_RAW_IOCTL_EVENT_FETCH       _IOR('U', 2, struct usb_raw_event)
 #define USB_RAW_IOCTL_EP0_READ          _IOWR('U', 3, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP0_WRITE         _IOWR('U', 4, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP_ENABLE         _IOW('U', 5, struct usb_endpoint_descriptor)
@@ -48,9 +49,67 @@
 #define USB_RAW_IOCTL_EP_READ           _IOWR('U', 8, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_CONFIGURE         _IO('U', 9)
 #define USB_RAW_IOCTL_VBUS_DRAW         _IOW('U', 10, uint32_t)
+#define USB_RAW_IOCTL_EPS_INFO          _IOR('U', 11, struct usb_raw_eps_info)
 
 #define USB_RAW_IO_FLAGS_ZERO       0x0001
 #define USB_RAW_IO_FLAGS_MASK       0x0001
+
+/* Maximum number of non-control endpoints */
+#define USB_RAW_EPS_NUM_MAX     30
+
+/* Maximum length of UDC endpoint name */
+#define USB_RAW_EP_NAME_MAX     16
+
+/* Used as addr in struct usb_raw_ep_info if endpoint accepts any address */
+#define USB_RAW_EP_ADDR_ANY     0xff
+
+/* Raw-gadget event types */
+enum usb_raw_event_type {
+    USB_RAW_EVENT_INVALID = 0,
+    USB_RAW_EVENT_CONNECT = 1,
+    USB_RAW_EVENT_CONTROL = 2,
+    USB_RAW_EVENT_SUSPEND = 3,
+    USB_RAW_EVENT_RESUME = 4,
+    USB_RAW_EVENT_RESET = 5,
+    USB_RAW_EVENT_DISCONNECT = 6,
+};
+
+/* Raw-gadget event structure */
+struct usb_raw_event {
+    uint32_t type;
+    uint32_t length;
+    uint8_t data[0];
+};
+
+/* Endpoint capabilities from struct usb_ep_caps */
+struct usb_raw_ep_caps {
+    uint32_t type_control : 1;
+    uint32_t type_iso     : 1;
+    uint32_t type_bulk    : 1;
+    uint32_t type_int     : 1;
+    uint32_t dir_in       : 1;
+    uint32_t dir_out      : 1;
+};
+
+/* Endpoint limits from struct usb_ep */
+struct usb_raw_ep_limits {
+    uint16_t maxpacket_limit;
+    uint16_t max_streams;
+    uint32_t reserved;
+};
+
+/* Information about a gadget endpoint */
+struct usb_raw_ep_info {
+    uint8_t name[USB_RAW_EP_NAME_MAX];
+    uint32_t addr;
+    struct usb_raw_ep_caps caps;
+    struct usb_raw_ep_limits limits;
+};
+
+/* Container for all endpoint info */
+struct usb_raw_eps_info {
+    struct usb_raw_ep_info eps[USB_RAW_EPS_NUM_MAX];
+};
 
 /* Maximum length of driver_name/device_name in the usb_raw_init struct. */
 #define UDC_NAME_LENGTH_MAX 128
@@ -80,9 +139,9 @@ struct usb_raw_ep_io {
 #define STRING_ID_PRODUCT       2
 #define STRING_ID_SERIAL        0  /* No serial number */
 
-/* Endpoint addresses */
-#define EP_IN_ADDRESS           0x81  /* Endpoint 1 IN (controller -> host) */
-#define EP_OUT_ADDRESS          0x01  /* Endpoint 1 OUT (host -> controller) */
+/* Endpoint addresses - direction bits only, number assigned dynamically */
+#define EP_IN_ADDRESS           USB_DIR_IN   /* Will be updated with actual endpoint number */
+#define EP_OUT_ADDRESS          USB_DIR_OUT  /* Will be updated with actual endpoint number */
 
 /* Device Descriptor */
 static struct usb_device_descriptor device_descriptor = {
@@ -180,6 +239,127 @@ static int fd = -1;              /* raw-gadget file descriptor */
 static int ep_in_fd = -1;        /* EP1 IN file descriptor */
 static int ep_out_fd = -1;       /* EP1 OUT file descriptor */
 static volatile bool running = true;
+
+/* Dynamically assigned endpoint addresses */
+static uint8_t actual_ep_in_addr = 0;
+static uint8_t actual_ep_out_addr = 0;
+
+/*
+ * Try to assign an endpoint address from the UDC to our endpoint descriptor.
+ * Returns true if assignment was successful, false otherwise.
+ */
+static bool assign_ep_address(struct usb_raw_ep_info *info,
+                              struct usb_endpoint_descriptor *ep) {
+    /* Check if endpoint number is already assigned (non-zero) */
+    if (usb_endpoint_num(ep) != 0)
+        return false;  /* Already assigned */
+    
+    /* Check direction matches */
+    if (usb_endpoint_dir_in(ep) && !info->caps.dir_in)
+        return false;
+    if (usb_endpoint_dir_out(ep) && !info->caps.dir_out)
+        return false;
+    
+    /* Check max packet size is supported */
+    if (usb_endpoint_maxp(ep) > info->limits.maxpacket_limit)
+        return false;
+    
+    /* Check transfer type matches */
+    switch (usb_endpoint_type(ep)) {
+    case USB_ENDPOINT_XFER_BULK:
+        if (!info->caps.type_bulk)
+            return false;
+        break;
+    case USB_ENDPOINT_XFER_INT:
+        if (!info->caps.type_int)
+            return false;
+        break;
+    case USB_ENDPOINT_XFER_ISOC:
+        if (!info->caps.type_iso)
+            return false;
+        break;
+    case USB_ENDPOINT_XFER_CONTROL:
+        if (!info->caps.type_control)
+            return false;
+        break;
+    default:
+        return false;
+    }
+    
+    /* Assign the endpoint address */
+    if (info->addr == USB_RAW_EP_ADDR_ANY) {
+        /* UDC doesn't have fixed addresses, use a counter */
+        static int addr_counter = 1;
+        ep->bEndpointAddress |= addr_counter++;
+    } else {
+        /* Use the UDC's fixed address */
+        ep->bEndpointAddress |= info->addr;
+    }
+    
+    return true;
+}
+
+/*
+ * Query available endpoints from the UDC and assign addresses to our endpoints.
+ * This must be called after USB_RAW_IOCTL_INIT.
+ */
+static int setup_endpoints(void) {
+    struct usb_raw_eps_info eps_info;
+    memset(&eps_info, 0, sizeof(eps_info));
+    
+    int num_eps = ioctl(fd, USB_RAW_IOCTL_EPS_INFO, &eps_info);
+    if (num_eps < 0) {
+        perror("USB_RAW_IOCTL_EPS_INFO failed");
+        return -1;
+    }
+    
+    printf("UDC has %d available endpoints:\n", num_eps);
+    for (int i = 0; i < num_eps; i++) {
+        printf("  EP %d: name=%s, addr=%u, type=%s%s%s, dir=%s%s, maxpacket=%u\n",
+               i,
+               eps_info.eps[i].name,
+               eps_info.eps[i].addr,
+               eps_info.eps[i].caps.type_iso ? "iso " : "",
+               eps_info.eps[i].caps.type_bulk ? "bulk " : "",
+               eps_info.eps[i].caps.type_int ? "int " : "",
+               eps_info.eps[i].caps.dir_in ? "in " : "",
+               eps_info.eps[i].caps.dir_out ? "out" : "",
+               eps_info.eps[i].limits.maxpacket_limit);
+    }
+    
+    /* Assign endpoint addresses for EP IN (interrupt IN) */
+    bool ep_in_assigned = false;
+    bool ep_out_assigned = false;
+    
+    for (int i = 0; i < num_eps && (!ep_in_assigned || !ep_out_assigned); i++) {
+        if (!ep_in_assigned) {
+            if (assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_in)) {
+                ep_in_assigned = true;
+                actual_ep_in_addr = config_descriptor.ep_in.bEndpointAddress;
+                printf("Assigned EP IN address: 0x%02X\n", actual_ep_in_addr);
+            }
+        }
+        if (!ep_out_assigned) {
+            if (assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_out)) {
+                ep_out_assigned = true;
+                actual_ep_out_addr = config_descriptor.ep_out.bEndpointAddress;
+                printf("Assigned EP OUT address: 0x%02X\n", actual_ep_out_addr);
+            }
+        }
+    }
+    
+    if (!ep_in_assigned) {
+        fprintf(stderr, "Error: Could not find suitable endpoint for EP IN\n");
+        return -1;
+    }
+    
+    if (!ep_out_assigned) {
+        fprintf(stderr, "Error: Could not find suitable endpoint for EP OUT\n");
+        return -1;
+    }
+    
+    return 0;
+}
 
 /* Signal handler for clean shutdown */
 static void signal_handler(int sig) {
@@ -496,7 +676,7 @@ static int send_report(const uint8_t *report, size_t length) {
         return -1;
     }
     
-    io->ep = EP_IN_ADDRESS;
+    io->ep = ep_in_fd;  /* Use the handle returned from EP_ENABLE */
     io->flags = 0;
     io->length = length;
     memcpy(io->data, report, length);
@@ -522,7 +702,7 @@ static int receive_output_report(uint8_t *buffer, size_t max_length) {
         return -1;
     }
     
-    io->ep = EP_OUT_ADDRESS;
+    io->ep = ep_out_fd;  /* Use the handle returned from EP_ENABLE */
     io->flags = 0;
     io->length = max_length;
     
@@ -591,6 +771,12 @@ int main(int argc, char **argv) {
         return 1;
     }
     
+    /* Query available endpoints and assign addresses dynamically */
+    if (setup_endpoints() < 0) {
+        close(fd);
+        return 1;
+    }
+    
     /* Enable endpoints */
     printf("Enabling endpoints...\n");
     
@@ -600,7 +786,7 @@ int main(int argc, char **argv) {
         close(fd);
         return 1;
     }
-    printf("EP1 IN enabled (fd %d)\n", ep_in_fd);
+    printf("EP IN enabled (addr=0x%02X, handle=%d)\n", actual_ep_in_addr, ep_in_fd);
     
     ep_out_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_out);
     if (ep_out_fd < 0) {
@@ -608,7 +794,7 @@ int main(int argc, char **argv) {
         close(fd);
         return 1;
     }
-    printf("EP1 OUT enabled (fd %d)\n", ep_out_fd);
+    printf("EP OUT enabled (addr=0x%02X, handle=%d)\n", actual_ep_out_addr, ep_out_fd);
     
     /* Configure device */
     if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE) < 0) {
