@@ -52,9 +52,12 @@
 #define USB_RAW_IO_FLAGS_ZERO       0x0001
 #define USB_RAW_IO_FLAGS_MASK       0x0001
 
+/* Maximum length of driver_name/device_name in the usb_raw_init struct. */
+#define UDC_NAME_LENGTH_MAX 128
+
 struct usb_raw_init {
-    uint8_t driver_name[16];
-    uint8_t device_name[16];
+    uint8_t driver_name[UDC_NAME_LENGTH_MAX];
+    uint8_t device_name[UDC_NAME_LENGTH_MAX];
     uint8_t speed;
 };
 
@@ -270,17 +273,21 @@ static int init_raw_gadget(void) {
     /*
      * Initialize raw-gadget with the detected UDC.
      * 
-     * driver_name: "dwc2" - the USB device controller driver for Pi Zero
-     * device_name: UDC device name from /sys/class/udc/ (e.g., "20980000.usb")
+     * For the dwc2 driver on Raspberry Pi Zero, BOTH driver_name and device_name
+     * should be set to the UDC name (e.g., "20980000.usb").
+     * 
+     * From raw_gadget.h documentation:
+     * "At the same time the dwc2 driver that is used on Raspberry Pi Zero, has
+     *  '20980000.usb' as both driver_name and device_name."
+     * 
      * speed: USB_SPEED_FULL (12 Mbps) - Xbox 360 controllers are full-speed
      * 
      * Note: Using wrong driver_name or device_name causes "Invalid argument" error
-     * from USB_RAW_IOCTL_INIT. The device_name must match exactly what appears
-     * in /sys/class/udc/, which for Pi Zero is "20980000.usb".
+     * from USB_RAW_IOCTL_INIT.
      */
     struct usb_raw_init init;
     memset(&init, 0, sizeof(init));
-    strncpy((char*)init.driver_name, "dwc2", sizeof(init.driver_name) - 1);
+    strncpy((char*)init.driver_name, udc_name, sizeof(init.driver_name) - 1);
     init.driver_name[sizeof(init.driver_name) - 1] = '\0';  /* Ensure null termination */
     strncpy((char*)init.device_name, udc_name, sizeof(init.device_name) - 1);
     init.device_name[sizeof(init.device_name) - 1] = '\0';  /* Ensure null termination */
@@ -296,7 +303,7 @@ static int init_raw_gadget(void) {
         fprintf(stderr, "  - Expected UDC for Pi Zero: 20980000.usb\n");
         return -1;
     }
-    printf("Initialized raw-gadget (driver: dwc2, device: %s, speed: full)\n", udc_name);
+    printf("Initialized raw-gadget (driver: %s, device: %s, speed: full)\n", udc_name, udc_name);
     return 0;
 }
 
