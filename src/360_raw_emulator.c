@@ -143,6 +143,13 @@ struct usb_raw_ep_io {
 #define DEBUG_REPORT_LOG_INTERVAL      1000
 
 /*
+ * Number of initial idle reports to send immediately after SET_CONFIGURATION.
+ * Xbox 360 consoles expect the first input report within ~100ms of enumeration.
+ * Sending multiple reports ensures reliable controller recognition.
+ */
+#define INITIAL_IDLE_REPORTS_COUNT     3
+
+/*
  * Idle report constant - all buttons released, sticks centered.
  * 
  * Xbox 360 protocol requires the first input report to be sent within
@@ -725,7 +732,7 @@ static int enable_endpoints_and_configure(void) {
      * as active immediately after enumeration completes.
      */
     printf("Sending initial idle reports for Xbox 360 compatibility...\n");
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < INITIAL_IDLE_REPORTS_COUNT; i++) {
         int ret = send_report(idle_report, XBOX360_REPORT_SIZE);
         if (ret < 0) {
             if (debug_mode) {
@@ -1379,6 +1386,11 @@ static void *input_thread(void *arg) {
                  * 
                  * PCs are more lenient, but the Xbox 360 requires continuous
                  * reports at ~125Hz (every 8ms).
+                 * 
+                 * Note: Errors from send_report() are intentionally ignored here
+                 * because keep-alive failures are non-fatal. The next iteration
+                 * will retry, and if the USB connection is truly broken, the
+                 * event loop thread will detect it and set running=false.
                  */
                 if (endpoints_configured) {
                     const uint8_t *report_to_send = have_last_report ? last_report : idle_report;
