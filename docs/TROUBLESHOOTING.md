@@ -153,7 +153,7 @@ The USB gadget is configured but not bound to any UDC.
    cat /sys/kernel/config/usb_gadget/xbox360/UDC
    ```
 
-### 4. Permission Denied Errors
+### 5. Permission Denied Errors
 
 **Symptom:**
 ```
@@ -171,7 +171,7 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 5. Input Controller Not Detected / No Debug Output When Using Controller
+### 6. Input Controller Not Detected / No Debug Output When Using Controller
 
 **Symptom:**
 ```
@@ -240,7 +240,7 @@ sudo systemctl start xbox360-emulator
    cd xpadneo && sudo ./install.sh
    ```
 
-### 6. Xbox 360 Doesn't Recognize Controller
+### 7. Xbox 360 Doesn't Recognize Controller
 
 **Symptom:** LED on Pi shows activity but Xbox 360 doesn't detect controller.
 
@@ -262,15 +262,52 @@ sudo systemctl start xbox360-emulator
 - First test on a PC to verify basic USB enumeration
 - Use Wireshark with USB capture to compare with real controller
 
-### 7. "EP0 write failed: Cannot send after transport endpoint shutdown" Error
+### 8. "USB disconnected - waiting for reconnection..." Message
+
+**Symptom:**
+```
+USB disconnected - waiting for reconnection...
+```
+
+**Cause:** The USB connection event was received. This can happen due to:
+1. Spurious USB disconnect events (electrical noise, USB suspend/resume cycles)
+2. Brief signal interruptions without actual cable disconnection
+3. Actual USB cable disconnection or host-side issues
+4. Host-side USB reset or port power cycling
+
+**Note:** The emulator now automatically waits for reconnection instead of exiting. 
+If the USB connection is restored (either automatically or by re-plugging), the 
+emulator will resume operation. This handles common spurious disconnect events.
+
+**Solutions if reconnection doesn't happen:**
+
+1. **Check the USB cable**: Use a quality data cable, not a charge-only cable.
+   Ensure the cable is firmly connected on both ends.
+
+2. **Try a different USB port** on the host PC/console
+
+3. **Verify the controller is still being detected**:
+   ```bash
+   python3 src/input_bridge.py --list-devices
+   # Should show your Xbox controller
+   ```
+
+4. **Check dmesg on the host** (PC/Xbox) for USB errors:
+   ```bash
+   dmesg | tail -20
+   ```
+
+5. **Restart the emulator** if reconnection fails after a few seconds:
+   Press Ctrl+C and run `sudo make run` again
+
+### 9. "EP0 write failed: Cannot send after transport endpoint shutdown" Error
 
 **Symptom:**
 ```
 EP0 write failed: Cannot send after transport endpoint shutdown
-USB disconnected
 ```
 
-**Cause:** The USB connection is dropped, often because:
+**Cause:** The USB connection is dropped during a control transfer, often because:
 1. No input reports are being sent to the host (host times out)
 2. The C emulator is not receiving input from Python (missing input bridge)
 3. USB cable issue or host-side disconnect
@@ -298,7 +335,7 @@ USB disconnected
 
 5. **Check dmesg on the host** (PC/Xbox) for USB errors
 
-### 8. Buttons/Sticks Not Working Correctly
+### 10. Buttons/Sticks Not Working Correctly
 
 **Symptom:** Controller is recognized but inputs are wrong.
 
@@ -319,7 +356,7 @@ USB disconnected
 
 4. Check button mapping - Xbox One uses slightly different codes than Xbox 360
 
-### 9. Pi Zero Single USB Port Limitation
+### 11. Pi Zero Single USB Port Limitation
 
 **Problem:** Pi Zero has only one micro USB port for both data and power.
 
@@ -340,7 +377,7 @@ USB disconnected
    - Some hubs can power the Pi while still allowing gadget mode
    - This is hardware-dependent and may not work with all hubs
 
-### 10. High CPU Usage
+### 12. High CPU Usage
 
 **Symptom:** Pi runs hot or becomes unresponsive.
 
@@ -358,7 +395,7 @@ USB disconnected
 
 4. Consider rewriting critical paths in C for production use
 
-### 10. evdev Import Error
+### 13. evdev Import Error
 
 **Symptom:**
 ```
