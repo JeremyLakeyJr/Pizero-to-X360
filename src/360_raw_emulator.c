@@ -950,6 +950,20 @@ static void *input_thread(void *arg) {
         usleep(8000);
     }
     
+    /*
+     * Drain any remaining data from stdin to prevent garbage characters
+     * appearing in the terminal after the program exits.
+     * This discards any leftover binary data that wasn't consumed.
+     * 
+     * Note: stdin is already in non-blocking mode (set at the start of this function),
+     * so this loop will return immediately when there's no more data.
+     */
+    uint8_t drain_buffer[256];
+    ssize_t drained;
+    while ((drained = read(STDIN_FILENO, drain_buffer, sizeof(drain_buffer))) > 0) {
+        /* Discard data */
+    }
+    
     printf("Input thread exiting\n");
     return NULL;
 }

@@ -31,6 +31,7 @@ import os
 import time
 import argparse
 import logging
+import signal
 from typing import Optional
 
 # Ensure we can import from the same directory
@@ -47,6 +48,15 @@ except ImportError:
 
 # Report interval for Xbox 360 (125Hz = 8ms)
 DEFAULT_REPORT_RATE = 125  # Hz
+
+# Flag to signal that the bridge should stop
+_stop_requested = False
+
+
+def _signal_handler(signum, frame):
+    """Handle signals to stop the bridge gracefully."""
+    global _stop_requested
+    _stop_requested = True
 
 
 def state_to_report(state: ControllerState) -> bytes:
@@ -105,6 +115,16 @@ def run_bridge(input_device: Optional[str] = None,
         debug_mode: If True, print debug info instead of binary output
         report_rate: Report rate in Hz
     """
+    global _stop_requested
+    
+    # Set up signal handlers for graceful shutdown FIRST, before any other operations
+    # SIGPIPE: Broken pipe (C emulator exited)
+    # SIGINT: Ctrl+C
+    # SIGTERM: termination request
+    signal.signal(signal.SIGPIPE, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    
     if not EVDEV_AVAILABLE:
         print("Error: evdev module not available. Install with: pip3 install evdev", 
               file=sys.stderr)
@@ -125,6 +145,7 @@ def run_bridge(input_device: Optional[str] = None,
     interval = 1.0 / report_rate
     
     # For non-debug mode, ensure stdout is binary and unbuffered
+    stdout_binary = None
     if not debug_mode:
         # Re-open stdout in binary mode, unbuffered
         stdout_binary = os.fdopen(sys.stdout.fileno(), 'wb', 0)
@@ -135,9 +156,10 @@ def run_bridge(input_device: Optional[str] = None,
     
     report_count = 0
     last_time = time.time()
+    stopped_by_signal = False
     
     try:
-        while True:
+        while not _stop_requested:
             # Poll for input events
             handler.poll(0.001)
             
@@ -160,8 +182,8 @@ def run_bridge(input_device: Optional[str] = None,
                 # Normal mode: write binary to stdout
                 try:
                     stdout_binary.write(report_bytes)
-                except BrokenPipeError:
-                    # C emulator has exited
+                except (BrokenPipeError, OSError):
+                    # C emulator has exited or pipe error
                     print("Pipe closed, exiting", file=sys.stderr)
                     break
             
@@ -172,11 +194,23 @@ def run_bridge(input_device: Optional[str] = None,
             if elapsed < interval:
                 time.sleep(interval - elapsed)
             last_time = time.time()
+        
+        # If we exited because _stop_requested was set, it was due to a signal
+        if _stop_requested:
+            stopped_by_signal = True
             
     except KeyboardInterrupt:
-        print("\nStopped by user", file=sys.stderr)
+        stopped_by_signal = True
     finally:
         handler.close()
+        # Close stdout_binary to ensure no more writes
+        if stdout_binary is not None:
+            try:
+                stdout_binary.close()
+            except (BrokenPipeError, OSError):
+                pass  # Ignore errors on close
+        if stopped_by_signal:
+            print("\nStopped by user", file=sys.stderr)
         print(f"Total reports sent: {report_count}", file=sys.stderr)
 
 
