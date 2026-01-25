@@ -792,11 +792,18 @@ static void setup_signals(void) {
     sa.sa_flags = 0;
     sigemptyset(&sa.sa_mask);
     
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    if (sigaction(SIGINT, &sa, NULL) < 0) {
+        perror("Failed to set up SIGINT handler");
+    }
+    if (sigaction(SIGTERM, &sa, NULL) < 0) {
+        perror("Failed to set up SIGTERM handler");
+    }
     
     /* Ignore SIGPIPE to prevent termination on broken pipe */
-    signal(SIGPIPE, SIG_IGN);
+    sa.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &sa, NULL) < 0) {
+        perror("Failed to set up SIGPIPE handler");
+    }
 }
 
 /* Open raw-gadget device */
