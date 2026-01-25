@@ -288,16 +288,20 @@ static bool assign_ep_address(struct usb_raw_ep_info *info,
     
     /* Assign the endpoint address */
     if (info->addr == USB_RAW_EP_ADDR_ANY) {
-        /* UDC doesn't have fixed addresses, use a counter */
+        /* UDC doesn't have fixed addresses, use a counter.
+         * USB endpoint numbers use bits 0-3, so valid range is 1-15.
+         * Note: setup_endpoints() is called only once from main() before any threads
+         * are created, so thread safety is not a concern for addr_counter.
+         */
         static int addr_counter = 1;
-        /* USB endpoint numbers use bits 0-3, so valid range is 1-15 */
         if (addr_counter > 15) {
             return false;  /* No more endpoint addresses available */
         }
-        ep->bEndpointAddress |= (addr_counter++ & 0x0F);
+        ep->bEndpointAddress |= (uint8_t)(addr_counter & 0x0F);
+        addr_counter++;
     } else {
         /* Use the UDC's fixed address (mask to ensure only endpoint number bits) */
-        ep->bEndpointAddress |= (info->addr & 0x0F);
+        ep->bEndpointAddress |= (uint8_t)(info->addr & 0x0F);
     }
     
     return true;
