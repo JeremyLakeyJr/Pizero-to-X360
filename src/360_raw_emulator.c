@@ -209,17 +209,17 @@ static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
     /* Xbox 360 Vendor-Specific Descriptor (16 bytes) */
     0x10,        /* bLength: 16 bytes */
     0x21,        /* bDescriptorType: Vendor (0x21) */
-    0x10, 0x01,  /* bcdVersion: 0x0110 (little endian) */
+    0x10, 0x01,  /* bcdVersion: 0x0110 in little endian (version 1.16) */
     0x01,        /* bNumEndpoints: 1 endpoint pair */
     0x25,        /* Reserved */
-    0x81,        /* bEndpointIn: EP1 IN */
+    0x81,        /* bEndpointIn: EP1 IN address (0x81 = endpoint 1, IN direction) */
     0x14,        /* bReportSizeIn: 20 bytes */
     0x00,        /* Reserved */
     0x00,        /* Reserved */
     0x00,        /* Reserved */
     0x00,        /* Reserved */
     0x13,        /* Reserved */
-    0x02,        /* bEndpointOut: EP2 OUT */
+    0x02,        /* bEndpointOut: EP2 OUT address (0x02 = endpoint 2, OUT direction) */
     0x08,        /* bReportSizeOut: 8 bytes */
     0x00,        /* Reserved */
     
