@@ -142,6 +142,29 @@ struct usb_raw_ep_io {
 /* Debug output interval (log every Nth report to avoid spam) */
 #define DEBUG_REPORT_LOG_INTERVAL      1000
 
+/*
+ * Idle report constant - all buttons released, sticks centered.
+ * 
+ * Xbox 360 protocol requires the first input report to be sent within
+ * ~100ms of SET_CONFIGURATION. This idle report is sent immediately
+ * after endpoint configuration to satisfy this timing requirement.
+ * 
+ * Format (20 bytes):
+ *   Byte 0: Report type (0x00)
+ *   Byte 1: Report size (0x14 = 20)
+ *   Bytes 2-19: All zeros (no buttons, centered sticks, no triggers)
+ */
+static const uint8_t idle_report[XBOX360_REPORT_SIZE] = {
+    0x00, 0x14,  /* Report type and size */
+    0x00, 0x00,  /* Button bitmap (no buttons pressed) */
+    0x00, 0x00,  /* Left/Right triggers (released) */
+    0x00, 0x00,  /* Left stick X (centered) */
+    0x00, 0x00,  /* Left stick Y (centered) */
+    0x00, 0x00,  /* Right stick X (centered) */
+    0x00, 0x00,  /* Right stick Y (centered) */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00  /* Reserved padding */
+};
+
 /* USB String Descriptor Indices */
 #define STRING_ID_MANUFACTURER  1
 #define STRING_ID_PRODUCT       2
@@ -480,6 +503,9 @@ static uint8_t actual_ep_out_addr = 0;
 /* Debug mode flag */
 static bool debug_mode = false;
 
+/* Forward declaration for send_report (used by enable_endpoints_and_configure) */
+static int send_report(const uint8_t *report, size_t length);
+
 /*
  * Try to assign an endpoint address from the UDC to our endpoint descriptor.
  * Returns true if assignment was successful, false otherwise.
@@ -686,6 +712,30 @@ static int enable_endpoints_and_configure(void) {
         printf("DEBUG: USB_RAW_IOCTL_CONFIGURE succeeded\n");
         printf("DEBUG: Ready to send/receive reports via EP handles: IN=%d, OUT=%d\n", 
                ep_in_fd, ep_out_fd);
+    }
+    
+    /*
+     * Send initial idle reports immediately after configuration.
+     * 
+     * The Xbox 360 console expects the first input report within ~100ms of
+     * SET_CONFIGURATION. Without this, the console may timeout and fail to
+     * recognize the controller (even though PCs are more lenient).
+     * 
+     * We send a few idle reports to ensure the console sees the controller
+     * as active immediately after enumeration completes.
+     */
+    printf("Sending initial idle reports for Xbox 360 compatibility...\n");
+    for (int i = 0; i < 3; i++) {
+        int ret = send_report(idle_report, XBOX360_REPORT_SIZE);
+        if (ret < 0) {
+            if (debug_mode) {
+                printf("DEBUG: Initial idle report %d failed, errno=%d\n", i, errno);
+            }
+            /* Non-fatal - continue anyway */
+        } else if (debug_mode) {
+            printf("DEBUG: Sent initial idle report %d (%d bytes)\n", i, ret);
+        }
+        usleep(8000);  /* 8ms between reports (125Hz) */
     }
     
     return 0;
@@ -1294,6 +1344,11 @@ static int receive_output_report(uint8_t *buffer, size_t max_length) {
 static void *input_thread(void *arg) {
     printf("Input thread started (reading from stdin)\n");
     uint8_t report[XBOX360_REPORT_SIZE];
+    uint8_t last_report[XBOX360_REPORT_SIZE];
+    bool have_last_report = false;
+    
+    /* Initialize last_report with idle report */
+    memcpy(last_report, idle_report, XBOX360_REPORT_SIZE);
     
     /* Set stdin to non-blocking */
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
@@ -1304,15 +1359,32 @@ static void *input_thread(void *arg) {
         ssize_t n = read(STDIN_FILENO, report, XBOX360_REPORT_SIZE);
         
         if (n == XBOX360_REPORT_SIZE) {
-            /* Send report to host */
+            /* Got new report from Python - send it and save as last */
             int ret = send_report(report, XBOX360_REPORT_SIZE);
             if (ret < 0) {
                 if (errno != EAGAIN && errno != EINTR) {
                     perror("Failed to send report");
                 }
             }
+            memcpy(last_report, report, XBOX360_REPORT_SIZE);
+            have_last_report = true;
         } else if (n < 0) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                /*
+                 * No data available from stdin - send last report as keep-alive.
+                 * 
+                 * The Xbox 360 console expects periodic reports even when idle.
+                 * Without this keep-alive mechanism, the console may disconnect
+                 * the controller after a timeout period.
+                 * 
+                 * PCs are more lenient, but the Xbox 360 requires continuous
+                 * reports at ~125Hz (every 8ms).
+                 */
+                if (endpoints_configured) {
+                    const uint8_t *report_to_send = have_last_report ? last_report : idle_report;
+                    send_report(report_to_send, XBOX360_REPORT_SIZE);
+                }
+            } else {
                 perror("stdin read error");
                 break;
             }
@@ -1453,9 +1525,12 @@ int main(int argc, char **argv) {
  *    - Forward to Python for applying to source controller
  *    - Implement separate thread for reading EP OUT
  * 
- * 2. Keep-alive mechanism:
- *    - Xbox 360 may expect periodic reports even when idle
- *    - Send last report every ~8ms if no new input
+ * 2. Keep-alive mechanism (FIXED):
+ *    - Xbox 360 expects periodic reports even when idle
+ *    - Now sends idle/last report every ~8ms when no new input from Python
+ *    - Sends initial idle reports immediately after SET_CONFIGURATION
+ *    - This fixes the "5 second delay" issue where Xbox 360 wouldn't recognize
+ *      the controller even though PCs worked fine
  * 
  * 3. Integration improvements:
  *    - Current: stdin pipe (simple but one-way)
