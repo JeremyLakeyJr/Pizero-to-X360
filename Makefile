@@ -35,11 +35,13 @@ help:
 	@echo "  make build       Build C emulator binary"
 	@echo "  make install     Install dependencies"
 	@echo "  make setup       Configure USB gadget (requires root)"
-	@echo "  make run         Run the emulator (requires root)"
+	@echo "  make run         Run the emulator with input bridge (requires root)"
+	@echo "  make run-bridge  Run input bridge in debug mode"
 	@echo "  make teardown    Remove USB gadget (requires root)"
 	@echo "  make test        Run tests"
 	@echo "  make lint        Run linter"
 	@echo "  make clean       Clean temporary files"
+	@echo "  make list-devices List available input devices"
 	@echo "  make build-rawgadget  Build raw-gadget module"
 	@echo ""
 
@@ -107,7 +109,7 @@ setup:
 	fi
 	$(SCRIPT_DIR)/setup_gadget.sh
 
-# Run the emulator
+# Run the emulator with input bridge
 run:
 	@if [ "$$(id -u)" -ne 0 ]; then \
 		echo "Error: This target must be run as root"; \
@@ -118,14 +120,32 @@ run:
 		echo "Error: Emulator not built. Run 'make build' first."; \
 		exit 1; \
 	fi
-	@echo "Starting Xbox 360 raw-gadget emulator..."
+	@echo "Starting Xbox 360 raw-gadget emulator with input bridge..."
+	@echo "Note: Make sure your source controller is connected (Bluetooth or USB)."
+	@echo "Use 'make list-devices' to verify the controller is detected."
+	@echo ""
+	$(PYTHON) $(SRC_DIR)/input_bridge.py 2>/dev/stderr | $(EMULATOR_BIN)
+
+# Run C emulator only (without input bridge - for testing USB enumeration)
+run-emulator-only:
+	@if [ "$$(id -u)" -ne 0 ]; then \
+		echo "Error: This target must be run as root"; \
+		echo "Usage: sudo make run-emulator-only"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(EMULATOR_BIN) ]; then \
+		echo "Error: Emulator not built. Run 'make build' first."; \
+		exit 1; \
+	fi
+	@echo "Starting Xbox 360 raw-gadget emulator (no input bridge)..."
+	@echo "Warning: No controller input will be forwarded."
 	$(EMULATOR_BIN)
 
 # Run in dry-run mode (no root required)
 run-dry:
 	$(PYTHON) $(SRC_DIR)/xbox360_emulator.py --dry-run --debug
 
-# Run with debug output
+# Run with debug output (legacy configfs method)
 run-debug:
 	@if [ "$$(id -u)" -ne 0 ]; then \
 		echo "Error: This target must be run as root"; \
@@ -158,7 +178,11 @@ test:
 
 # List available input devices
 list-devices:
-	$(PYTHON) $(SRC_DIR)/xbox360_emulator.py --list-devices
+	$(PYTHON) $(SRC_DIR)/input_bridge.py --list-devices
+
+# Run the input bridge (for manual testing)
+run-bridge:
+	$(PYTHON) $(SRC_DIR)/input_bridge.py --debug
 
 # Run linter
 lint:

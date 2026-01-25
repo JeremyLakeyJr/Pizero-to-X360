@@ -171,18 +171,36 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 5. Input Controller Not Detected
+### 5. Input Controller Not Detected / No Debug Output When Using Controller
 
 **Symptom:**
 ```
 RuntimeError: No Xbox controller found
 ```
+Or: Nothing happens when you press buttons on your Bluetooth controller and no input appears in the debug log.
+
+**Understanding the Architecture:**
+
+The system has two main components that must work together:
+1. **C emulator** (`./bin/xbox360_raw_emulator`): Handles USB protocol via raw-gadget
+2. **Python input bridge** (`input_bridge.py`): Reads from your source controller and sends data to C emulator
+
+If you run only the C emulator (`sudo ./bin/xbox360_raw_emulator`), it will NOT read from your Bluetooth controller directly - it expects input via stdin pipe from Python.
+
+**Correct Usage:**
+```bash
+# Use the input bridge to connect your controller to the emulator:
+python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator
+
+# Or with the systemd service (automatically pipes them together):
+sudo systemctl start xbox360-emulator
+```
 
 **Solutions:**
 
-1. List available devices:
+1. List available devices to find your controller:
    ```bash
-   sudo python3 src/xbox360_emulator.py --list-devices
+   python3 src/input_bridge.py --list-devices
    ```
 
 2. Check if controller is connected:
@@ -190,22 +208,36 @@ RuntimeError: No Xbox controller found
    lsusb | grep -i xbox
    # Or for any controllers
    lsusb | grep -i microsoft
+   # For Bluetooth controllers
+   bluetoothctl devices Connected
    ```
 
 3. Check evdev devices:
    ```bash
    ls -la /dev/input/event*
-   cat /proc/bus/input/devices
+   cat /proc/bus/input/devices | grep -A 10 -i xbox
    ```
 
 4. Manually specify device:
    ```bash
-   sudo python3 src/xbox360_emulator.py --input /dev/input/event0
+   python3 src/input_bridge.py --input /dev/input/event0 | sudo ./bin/xbox360_raw_emulator
    ```
 
-5. Install xpad driver (if not loaded):
+5. Test input bridge in debug mode (without C emulator):
    ```bash
+   python3 src/input_bridge.py --debug
+   # Press buttons - you should see hex output
+   ```
+
+6. Install xpad driver (for USB controllers) or xpadneo (for Bluetooth):
+   ```bash
+   # For USB controllers
    sudo modprobe xpad
+   
+   # For Bluetooth controllers (xpadneo)
+   sudo apt install dkms
+   git clone https://github.com/atar-axis/xpadneo
+   cd xpadneo && sudo ./install.sh
    ```
 
 ### 6. Xbox 360 Doesn't Recognize Controller
@@ -230,15 +262,52 @@ RuntimeError: No Xbox controller found
 - First test on a PC to verify basic USB enumeration
 - Use Wireshark with USB capture to compare with real controller
 
-### 7. Buttons/Sticks Not Working Correctly
+### 7. "EP0 write failed: Cannot send after transport endpoint shutdown" Error
+
+**Symptom:**
+```
+EP0 write failed: Cannot send after transport endpoint shutdown
+USB disconnected
+```
+
+**Cause:** The USB connection is dropped, often because:
+1. No input reports are being sent to the host (host times out)
+2. The C emulator is not receiving input from Python (missing input bridge)
+3. USB cable issue or host-side disconnect
+
+**Solutions:**
+
+1. **Make sure input bridge is running** (most common fix):
+   ```bash
+   # WRONG - no input source:
+   sudo ./bin/xbox360_raw_emulator
+   
+   # CORRECT - with input bridge:
+   python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator
+   ```
+
+2. **Verify your controller is detected** before starting:
+   ```bash
+   python3 src/input_bridge.py --list-devices
+   # Should show your Xbox controller
+   ```
+
+3. **Check USB cable**: Use a quality data cable, not a charge-only cable
+
+4. **Try a different USB port** on the host
+
+5. **Check dmesg on the host** (PC/Xbox) for USB errors
+
+### 8. Buttons/Sticks Not Working Correctly
 
 **Symptom:** Controller is recognized but inputs are wrong.
 
 **Solutions:**
 
-1. Run in debug mode to see input values:
+1. Run input bridge in debug mode to see input values:
    ```bash
-   sudo python3 src/xbox360_emulator.py --debug
+   python3 src/input_bridge.py --debug
+   # Press buttons and watch the hex output
    ```
 
 2. Test input handler directly:
@@ -250,7 +319,7 @@ RuntimeError: No Xbox controller found
 
 4. Check button mapping - Xbox One uses slightly different codes than Xbox 360
 
-### 8. Pi Zero Single USB Port Limitation
+### 9. Pi Zero Single USB Port Limitation
 
 **Problem:** Pi Zero has only one micro USB port for both data and power.
 
@@ -271,22 +340,19 @@ RuntimeError: No Xbox controller found
    - Some hubs can power the Pi while still allowing gadget mode
    - This is hardware-dependent and may not work with all hubs
 
-### 9. High CPU Usage
+### 10. High CPU Usage
 
 **Symptom:** Pi runs hot or becomes unresponsive.
 
 **Solutions:**
 
-1. Increase polling interval (may affect responsiveness):
-   ```python
-   # In xbox360_emulator.py, change:
-   REPORT_INTERVAL = 0.010  # 10ms instead of 8ms
+1. Reduce report rate for the input bridge:
+   ```bash
+   # Default is 125Hz (8ms), try 100Hz:
+   python3 src/input_bridge.py --rate 100 | sudo ./bin/xbox360_raw_emulator
    ```
 
-2. Disable debug logging:
-   ```bash
-   sudo python3 src/xbox360_emulator.py  # Without --debug
-   ```
+2. Disable debug logging by not using --debug flag
 
 3. Use Python 3 (not Python 2)
 
