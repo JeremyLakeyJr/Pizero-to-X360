@@ -835,8 +835,26 @@ static void *event_loop_thread(void *arg) {
             break;
             
         case USB_RAW_EVENT_DISCONNECT:
-            printf("USB disconnected\n");
+            printf("USB disconnected - waiting for reconnection...\n");
             usb_connected = false;
+            /* Clean up endpoints similar to reset, allowing reconnection */
+            if (endpoints_configured) {
+                if (ep_in_fd >= 0) {
+                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_in_fd);
+                }
+                if (ep_out_fd >= 0) {
+                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_out_fd);
+                }
+            }
+            endpoints_configured = false;
+            ep_in_fd = -1;
+            ep_out_fd = -1;
+            /* Reset endpoint addresses for next connection */
+            config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
+            config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
+            actual_ep_in_addr = 0;
+            actual_ep_out_addr = 0;
+            /* Continue running - allow reconnection instead of exiting */
             break;
             
         default:
