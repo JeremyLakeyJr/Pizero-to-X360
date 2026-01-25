@@ -241,6 +241,7 @@ static int ep_in_fd = -1;        /* EP1 IN file descriptor */
 static int ep_out_fd = -1;       /* EP1 OUT file descriptor */
 static volatile bool running = true;
 static volatile bool endpoints_configured = false;  /* Set when endpoints are ready */
+static volatile bool usb_connected = false;         /* Set when USB is connected */
 
 /* Dynamically assigned endpoint addresses */
 static uint8_t actual_ep_in_addr = 0;
@@ -697,6 +698,20 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
         free(io);
         
         if (ret < 0) {
+            /* ESHUTDOWN (108) means transport endpoint shutdown - expected during disconnect */
+            if (errno == ESHUTDOWN) {
+                if (debug_mode) {
+                    printf("EP0 write skipped (transport endpoint shutdown)\n");
+                }
+                return -1;
+            }
+            /* Also skip error if USB is already disconnected */
+            if (!usb_connected) {
+                if (debug_mode) {
+                    printf("EP0 write skipped (USB not connected)\n");
+                }
+                return -1;
+            }
             perror("EP0 write failed");
             return -1;
         }
@@ -709,6 +724,20 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
         
         int ret = ioctl(fd, USB_RAW_IOCTL_EP0_READ, &io);
         if (ret < 0) {
+            /* ESHUTDOWN (108) means transport endpoint shutdown - expected during disconnect */
+            if (errno == ESHUTDOWN) {
+                if (debug_mode) {
+                    printf("EP0 read skipped (transport endpoint shutdown)\n");
+                }
+                return -1;
+            }
+            /* Also skip error if USB is already disconnected */
+            if (!usb_connected) {
+                if (debug_mode) {
+                    printf("EP0 read skipped (USB not connected)\n");
+                }
+                return -1;
+            }
             perror("EP0 read (status) failed");
             return -1;
         }
@@ -751,6 +780,7 @@ static void *event_loop_thread(void *arg) {
         switch (event_buffer.event.type) {
         case USB_RAW_EVENT_CONNECT:
             printf("USB connected\n");
+            usb_connected = true;
             /* Now we can query endpoint info */
             if (setup_endpoints() < 0) {
                 fprintf(stderr, "Failed to setup endpoints on connect\n");
@@ -806,6 +836,7 @@ static void *event_loop_thread(void *arg) {
             
         case USB_RAW_EVENT_DISCONNECT:
             printf("USB disconnected\n");
+            usb_connected = false;
             break;
             
         default:
