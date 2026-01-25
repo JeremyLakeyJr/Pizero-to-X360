@@ -86,7 +86,14 @@ fi
 echo ""
 echo "Step 3: Installing Python packages..."
 echo "======================================="
-pip3 install evdev pyusb --break-system-packages 2>/dev/null || pip3 install evdev pyusb
+# Try apt first (safer for system Python), then fall back to pip
+if apt-get install -y python3-evdev python3-usb 2>/dev/null; then
+    echo "[OK] Python packages installed via apt"
+else
+    echo "apt packages not available, using pip..."
+    # Use --break-system-packages on newer pip, or regular pip on older systems
+    pip3 install evdev pyusb --break-system-packages 2>/dev/null || pip3 install evdev pyusb
+fi
 
 echo ""
 echo "Step 4: Configuring USB gadget mode (boot options)..."

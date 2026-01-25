@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <pthread.h>
+#include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <linux/usb/ch9.h>
@@ -212,23 +213,24 @@ static int open_raw_gadget(void) {
  */
 static const char* detect_udc_name(void) {
     static char udc_name[64];
-    FILE *fp;
+    DIR *dir;
+    struct dirent *entry;
     
-    /* Try to read from /sys/class/udc directory */
-    fp = popen("ls /sys/class/udc 2>/dev/null | head -1", "r");
-    if (fp != NULL) {
-        if (fgets(udc_name, sizeof(udc_name), fp) != NULL) {
-            /* Remove trailing newline */
-            size_t len = strlen(udc_name);
-            if (len > 0 && udc_name[len-1] == '\n') {
-                udc_name[len-1] = '\0';
+    /* Try to read from /sys/class/udc directory using opendir/readdir */
+    dir = opendir("/sys/class/udc");
+    if (dir != NULL) {
+        while ((entry = readdir(dir)) != NULL) {
+            /* Skip . and .. entries */
+            if (entry->d_name[0] == '.') {
+                continue;
             }
-            pclose(fp);
-            if (strlen(udc_name) > 0) {
-                return udc_name;
-            }
+            /* Found a UDC entry - copy the name safely */
+            strncpy(udc_name, entry->d_name, sizeof(udc_name) - 1);
+            udc_name[sizeof(udc_name) - 1] = '\0';  /* Ensure null termination */
+            closedir(dir);
+            return udc_name;
         }
-        pclose(fp);
+        closedir(dir);
     }
     
     /*
@@ -279,7 +281,9 @@ static int init_raw_gadget(void) {
     struct usb_raw_init init;
     memset(&init, 0, sizeof(init));
     strncpy((char*)init.driver_name, "dwc2", sizeof(init.driver_name) - 1);
+    init.driver_name[sizeof(init.driver_name) - 1] = '\0';  /* Ensure null termination */
     strncpy((char*)init.device_name, udc_name, sizeof(init.device_name) - 1);
+    init.device_name[sizeof(init.device_name) - 1] = '\0';  /* Ensure null termination */
     init.speed = USB_SPEED_FULL;
     
     int ret = ioctl(fd, USB_RAW_IOCTL_INIT, &init);
