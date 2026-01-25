@@ -138,7 +138,8 @@ struct usb_raw_ep_io {
 /* USB String Descriptor Indices */
 #define STRING_ID_MANUFACTURER  1
 #define STRING_ID_PRODUCT       2
-#define STRING_ID_SERIAL        0  /* No serial number */
+#define STRING_ID_SERIAL_NUM    3
+#define STRING_ID_IF3           4
 
 /* Endpoint addresses - direction bits only, number assigned dynamically */
 #define EP_IN_ADDRESS           USB_DIR_IN   /* Will be updated with actual endpoint number */
@@ -152,49 +153,51 @@ static struct usb_device_descriptor device_descriptor = {
     .bDeviceClass       = 0xFF,  /* Vendor specific */
     .bDeviceSubClass    = 0xFF,
     .bDeviceProtocol    = 0xFF,
-    .bMaxPacketSize0    = 8,     /* Max packet size for endpoint 0 */
+    .bMaxPacketSize0    = 64,    /* Max packet size for endpoint 0 (high-speed) */
     .idVendor           = __constant_cpu_to_le16(XBOX360_VENDOR_ID),
     .idProduct          = __constant_cpu_to_le16(XBOX360_PRODUCT_ID),
-    .bcdDevice          = __constant_cpu_to_le16(XBOX360_DEVICE_VERSION),
+    .bcdDevice          = 0,     /* bcdDevice: 0 (as in CasperVM) */
     .iManufacturer      = STRING_ID_MANUFACTURER,
     .iProduct           = STRING_ID_PRODUCT,
-    .iSerialNumber      = STRING_ID_SERIAL,
+    .iSerialNumber      = STRING_ID_SERIAL_NUM,  /* String ID 3 */
     .bNumConfigurations = 1,
 };
 
 /*
- * Xbox 360 Configuration Descriptor - Full 48-byte descriptor as raw bytes
+ * Xbox 360 Configuration Descriptor - Full descriptor matching CasperVM/360-raw-gadget
  * 
  * This is the complete configuration descriptor matching a real Xbox 360
  * wired controller. Using raw bytes ensures exact byte-for-byte match
  * with the expected format, avoiding any padding issues from C structs.
  * 
- * The descriptor includes:
+ * The descriptor includes all 4 interfaces as found on genuine Xbox 360 controllers:
  * - Configuration descriptor (9 bytes)
- * - Interface descriptor (9 bytes)  
- * - Xbox 360 vendor-specific descriptor (16 bytes) - CRITICAL for xpad driver!
- * - Endpoint IN descriptor (7 bytes)
- * - Endpoint OUT descriptor (7 bytes)
- * Total: 48 bytes (0x30)
+ * - Interface 0: Control data (9 + 17 + 7 + 7 = 40 bytes)
+ * - Interface 1: Headset/Audio (9 + 27 + 7 + 7 + 7 + 7 = 64 bytes)
+ * - Interface 2: Unknown (9 + 9 + 7 = 25 bytes)
+ * - Interface 3: Security method (9 + 6 = 15 bytes)
+ * Total: 153 bytes (0x99)
  * 
- * The vendor-specific descriptor (type 0x21) is essential for the xpad driver
- * and Xbox 360 console to recognize this as a valid Xbox 360 controller.
- * Without it, the host may enumerate the device but will disconnect shortly
- * after because it doesn't recognize it as a valid controller.
+ * The vendor-specific descriptors (type 0x21 for IF0-IF2, 0x41 for IF3) are 
+ * essential for the xpad driver and Xbox 360 console to recognize this as 
+ * a valid Xbox 360 controller.
+ * 
+ * Based on CasperVM/360-raw-gadget (https://github.com/CasperVM/360-raw-gadget)
  */
-#define CONFIG_DESC_SIZE 48
+#define CONFIG_DESC_SIZE 153
 
 static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
     /* Configuration Descriptor (9 bytes) */
     0x09,        /* bLength: 9 bytes */
     0x02,        /* bDescriptorType: Configuration */
-    0x30, 0x00,  /* wTotalLength: 48 bytes (little endian) */
-    0x01,        /* bNumInterfaces: 1 */
+    0x99, 0x00,  /* wTotalLength: 153 bytes (little endian) */
+    0x04,        /* bNumInterfaces: 4 */
     0x01,        /* bConfigurationValue: 1 */
     0x00,        /* iConfiguration: None */
     0xA0,        /* bmAttributes: Bus powered, remote wakeup */
     0xFA,        /* bMaxPower: 500mA (250 * 2) */
     
+    /* ========== Interface 0: Control Data ========== */
     /* Interface Descriptor (9 bytes) */
     0x09,        /* bLength: 9 bytes */
     0x04,        /* bDescriptorType: Interface */
@@ -206,22 +209,23 @@ static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
     0x01,        /* bInterfaceProtocol: Input interface */
     0x00,        /* iInterface: None */
     
-    /* Xbox 360 Vendor-Specific Descriptor (16 bytes) */
-    0x10,        /* bLength: 16 bytes */
+    /* Xbox 360 IF0 Vendor-Specific Descriptor (17 bytes) */
+    0x11,        /* bLength: 17 bytes */
     0x21,        /* bDescriptorType: Vendor (0x21) */
-    0x10, 0x01,  /* bcdVersion: 0x0110 in little endian (version 1.16) */
-    0x01,        /* bNumEndpoints: 1 endpoint pair */
-    0x25,        /* Reserved */
-    0x81,        /* bEndpointIn: EP1 IN address (0x81 = endpoint 1, IN direction) */
-    0x14,        /* bReportSizeIn: 20 bytes */
-    0x00,        /* Reserved */
-    0x00,        /* Reserved */
-    0x00,        /* Reserved */
-    0x00,        /* Reserved */
-    0x13,        /* Reserved */
-    0x02,        /* bEndpointOut: EP2 OUT address (0x02 = endpoint 2, OUT direction) */
-    0x08,        /* bReportSizeOut: 8 bytes */
-    0x00,        /* Reserved */
+    0x00, 0x01,  /* Unknown1, Unknown2 */
+    0x01,        /* Unknown3 */
+    0x25,        /* Unknown4 */
+    0x81,        /* bEndpointAddress: EP1 IN (0x81) */
+    0x14,        /* bMaxDataSize: 20 bytes */
+    0x00,        /* Unknown5 */
+    0x00,        /* Unknown6 */
+    0x00,        /* Unknown7 */
+    0x00,        /* Unknown8 */
+    0x13,        /* Unknown9 */
+    0x01,        /* bEndpointAddress2: EP1 OUT (0x01) */
+    0x08,        /* bMaxDataSize2: 8 bytes */
+    0x00,        /* Unknown10 */
+    0x00,        /* Unknown11 */
     
     /* Endpoint Descriptor for EP1 IN (7 bytes) */
     0x07,        /* bLength: 7 bytes */
@@ -231,13 +235,134 @@ static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
     0x20, 0x00,  /* wMaxPacketSize: 32 bytes (little endian) */
     0x04,        /* bInterval: 4ms */
     
+    /* Endpoint Descriptor for EP1 OUT (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x01,        /* bEndpointAddress: EP 1 OUT */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes (little endian) */
+    0x08,        /* bInterval: 8ms */
+    
+    /* ========== Interface 1: Headset/Audio ========== */
+    /* Interface Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x04,        /* bDescriptorType: Interface */
+    0x01,        /* bInterfaceNumber: 1 */
+    0x00,        /* bAlternateSetting: 0 */
+    0x04,        /* bNumEndpoints: 4 */
+    0xFF,        /* bInterfaceClass: Vendor Specific */
+    0x5D,        /* bInterfaceSubClass: Xbox 360 specific */
+    0x03,        /* bInterfaceProtocol: Headset */
+    0x00,        /* iInterface: None */
+    
+    /* Xbox 360 IF1 Vendor-Specific Descriptor (27 bytes) */
+    0x1B,        /* bLength: 27 bytes */
+    0x21,        /* bDescriptorType: Vendor (0x21) */
+    0x00, 0x01,  /* Unknown1, Unknown2 */
+    0x01,        /* Unknown3 */
+    0x01,        /* Unknown4 */
+    0x82,        /* bEndpointAddress: EP2 IN */
+    0x40,        /* bMaxDataSize: 64 bytes */
+    0x01,        /* Unknown5 */
+    0x02,        /* bEndpointAddress2: EP2 OUT */
+    0x20,        /* bMaxDataSize2: 32 bytes */
+    0x16,        /* Unknown6 */
+    0x83,        /* bEndpointAddress3: EP3 IN */
+    0x00,        /* bMaxDataSize3: 0 bytes */
+    0x00,        /* Unknown7 */
+    0x00,        /* Unknown8 */
+    0x00,        /* Unknown9 */
+    0x00,        /* Unknown10 */
+    0x00,        /* Unknown11 */
+    0x16,        /* Unknown12 */
+    0x03,        /* bEndpointAddress4: EP3 OUT */
+    0x00,        /* bMaxDataSize4: 0 bytes */
+    0x00,        /* Unknown13 */
+    0x00,        /* Unknown14 */
+    0x00,        /* Unknown15 */
+    0x00,        /* Unknown16 */
+    0x00,        /* Unknown17 */
+    
+    /* Endpoint Descriptor for EP2 IN (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x82,        /* bEndpointAddress: EP 2 IN */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
+    0x02,        /* bInterval: 2ms */
+    
     /* Endpoint Descriptor for EP2 OUT (7 bytes) */
     0x07,        /* bLength: 7 bytes */
     0x05,        /* bDescriptorType: Endpoint */
     0x02,        /* bEndpointAddress: EP 2 OUT */
     0x03,        /* bmAttributes: Interrupt */
-    0x20, 0x00,  /* wMaxPacketSize: 32 bytes (little endian) */
-    0x08,        /* bInterval: 8ms */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
+    0x04,        /* bInterval: 4ms */
+    
+    /* Endpoint Descriptor for EP3 IN (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x83,        /* bEndpointAddress: EP 3 IN */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
+    0x40,        /* bInterval: 64ms */
+    
+    /* Endpoint Descriptor for EP3 OUT (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x03,        /* bEndpointAddress: EP 3 OUT */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
+    0x10,        /* bInterval: 16ms */
+    
+    /* ========== Interface 2: Unknown ========== */
+    /* Interface Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x04,        /* bDescriptorType: Interface */
+    0x02,        /* bInterfaceNumber: 2 */
+    0x00,        /* bAlternateSetting: 0 */
+    0x01,        /* bNumEndpoints: 1 */
+    0xFF,        /* bInterfaceClass: Vendor Specific */
+    0x5D,        /* bInterfaceSubClass: Xbox 360 specific */
+    0x02,        /* bInterfaceProtocol: Unknown */
+    0x00,        /* iInterface: None */
+    
+    /* Xbox 360 IF2 Vendor-Specific Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x21,        /* bDescriptorType: Vendor (0x21) */
+    0x00, 0x01,  /* Unknown1, Unknown2 */
+    0x01,        /* Unknown3 */
+    0x22,        /* Unknown4 */
+    0x84,        /* bEndpointAddress: EP4 IN */
+    0x07,        /* bMaxDataSize: 7 bytes */
+    0x00,        /* Unknown5 */
+    
+    /* Endpoint Descriptor for EP4 IN (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x84,        /* bEndpointAddress: EP 4 IN */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
+    0x10,        /* bInterval: 16ms */
+    
+    /* ========== Interface 3: Security Method ========== */
+    /* Interface Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x04,        /* bDescriptorType: Interface */
+    0x03,        /* bInterfaceNumber: 3 */
+    0x00,        /* bAlternateSetting: 0 */
+    0x00,        /* bNumEndpoints: 0 */
+    0xFF,        /* bInterfaceClass: Vendor Specific */
+    0xFD,        /* bInterfaceSubClass: Security */
+    0x13,        /* bInterfaceProtocol: Security method */
+    0x04,        /* iInterface: String ID 4 */
+    
+    /* Xbox 360 IF3 Vendor-Specific Descriptor (6 bytes) */
+    0x06,        /* bLength: 6 bytes */
+    0x41,        /* bDescriptorType: Vendor (0x41) - Different for IF3! */
+    0x00, 0x01,  /* Unknown1, Unknown2 */
+    0x01,        /* Unknown3 */
+    0x03,        /* Unknown4 */
 };
 
 /* 
@@ -286,6 +411,42 @@ static uint8_t manufacturer_string[] = {
 static uint8_t product_string[] = {
     24, USB_DT_STRING,
     'C', 0, 'o', 0, 'n', 0, 't', 0, 'r', 0, 'o', 0, 'l', 0, 'l', 0, 'e', 0, 'r', 0,
+};
+
+/* Serial Number: "08FEC93" */
+/* Serial Number: "08FEC93" */
+static uint8_t serial_string[] = {
+    18, USB_DT_STRING,
+    '0', 0, '8', 0, 'F', 0, 'E', 0, 'C', 0, '9', 0, '3', 0,
+};
+
+/* Interface 3 String: Security method description */
+static uint8_t if3_string[] = {
+    182, USB_DT_STRING,
+    'X', 0, 'b', 0, 'o', 0, 'x', 0, ' ', 0, 'S', 0, 'e', 0, 'c', 0, 'u', 0, 'r', 0, 'i', 0, 't', 0, 'y', 0, ' ', 0,
+    'M', 0, 'e', 0, 't', 0, 'h', 0, 'o', 0, 'd', 0, ' ', 0, '3', 0, ',', 0, ' ', 0,
+    'V', 0, 'e', 0, 'r', 0, 's', 0, 'i', 0, 'o', 0, 'n', 0, ' ', 0, '1', 0, '.', 0, '0', 0, '0', 0, ',', 0, ' ', 0,
+    0xA9, 0x00, ' ', 0, '2', 0, '0', 0, '0', 0, '5', 0, ' ', 0, 
+    'M', 0, 'i', 0, 'c', 0, 'r', 0, 'o', 0, 's', 0, 'o', 0, 'f', 0, 't', 0, ' ', 0,
+    'C', 0, 'o', 0, 'r', 0, 'p', 0, 'o', 0, 'r', 0, 'a', 0, 't', 0, 'i', 0, 'o', 0, 'n', 0, '.', 0, ' ', 0,
+    'A', 0, 'l', 0, 'l', 0, ' ', 0, 'r', 0, 'i', 0, 'g', 0, 'h', 0, 't', 0, 's', 0, ' ', 0,
+    'r', 0, 'e', 0, 's', 0, 'e', 0, 'r', 0, 'v', 0, 'e', 0, 'd', 0, '.', 0,
+};
+
+/*
+ * USB Device Qualifier Descriptor (for full-speed operation support)
+ * Required for USB 2.0 high-speed devices
+ */
+static struct usb_qualifier_descriptor device_qualifier = {
+    .bLength            = sizeof(struct usb_qualifier_descriptor),
+    .bDescriptorType    = USB_DT_DEVICE_QUALIFIER,
+    .bcdUSB             = __constant_cpu_to_le16(0x0200),
+    .bDeviceClass       = 0,
+    .bDeviceSubClass    = 0,
+    .bDeviceProtocol    = 0,
+    .bMaxPacketSize0    = 64,  /* EP0 max packet size for high-speed */
+    .bNumConfigurations = 1,
+    .bRESERVED          = 0,
 };
 
 /* Global state */
@@ -621,7 +782,7 @@ static int init_raw_gadget(void) {
      * "At the same time the dwc2 driver that is used on Raspberry Pi Zero, has
      *  '20980000.usb' as both driver_name and device_name."
      * 
-     * speed: USB_SPEED_FULL (12 Mbps) - Xbox 360 controllers are full-speed
+     * speed: USB_SPEED_HIGH (480 Mbps) - Matching CasperVM/360-raw-gadget
      * 
      * Note: Using wrong driver_name or device_name causes "Invalid argument" error
      * from USB_RAW_IOCTL_INIT.
@@ -632,7 +793,7 @@ static int init_raw_gadget(void) {
     init.driver_name[sizeof(init.driver_name) - 1] = '\0';  /* Ensure null termination */
     strncpy((char*)init.device_name, udc_name, sizeof(init.device_name) - 1);
     init.device_name[sizeof(init.device_name) - 1] = '\0';  /* Ensure null termination */
-    init.speed = USB_SPEED_FULL;
+    init.speed = USB_SPEED_HIGH;
     
     int ret = ioctl(fd, USB_RAW_IOCTL_INIT, &init);
     if (ret < 0) {
@@ -644,7 +805,7 @@ static int init_raw_gadget(void) {
         fprintf(stderr, "  - Expected UDC for Pi Zero: 20980000.usb\n");
         return -1;
     }
-    printf("Initialized raw-gadget (driver: %s, device: %s, speed: full)\n", udc_name, udc_name);
+    printf("Initialized raw-gadget (driver: %s, device: %s, speed: high)\n", udc_name, udc_name);
     return 0;
 }
 
@@ -691,10 +852,30 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                         } else if (desc_index == STRING_ID_PRODUCT) {
                             memcpy(buffer, product_string, product_string[0]);
                             length = product_string[0];
+                        } else if (desc_index == STRING_ID_SERIAL_NUM) {
+                            memcpy(buffer, serial_string, serial_string[0]);
+                            length = serial_string[0];
+                        } else if (desc_index == STRING_ID_IF3) {
+                            memcpy(buffer, if3_string, if3_string[0]);
+                            length = if3_string[0];
                         } else {
                             if (debug_mode) printf("  -> Unknown string index %d\n", desc_index);
                             return -1;
                         }
+                        break;
+                    
+                    case USB_DT_DEVICE_QUALIFIER:
+                        if (debug_mode) printf("  -> GET_DESCRIPTOR: DEVICE_QUALIFIER\n");
+                        memcpy(buffer, &device_qualifier, sizeof(device_qualifier));
+                        length = sizeof(device_qualifier);
+                        break;
+                    
+                    case USB_DT_OTHER_SPEED_CONFIG:
+                        if (debug_mode) printf("  -> GET_DESCRIPTOR: OTHER_SPEED_CONFIG\n");
+                        /* Return same config but with different descriptor type */
+                        memcpy(buffer, config_descriptor_raw, CONFIG_DESC_SIZE);
+                        buffer[1] = USB_DT_OTHER_SPEED_CONFIG;  /* Change descriptor type */
+                        length = CONFIG_DESC_SIZE;
                         break;
                         
                     default:
@@ -719,6 +900,13 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                 length = 0;
                 break;
             }
+            
+            case USB_REQ_GET_INTERFACE:
+                if (debug_mode) printf("  -> GET_INTERFACE\n");
+                /* Return current alternate setting (always 0) */
+                buffer[0] = 0;
+                length = 1;
+                break;
                 
             case USB_REQ_SET_INTERFACE:
                 if (debug_mode) printf("  -> SET_INTERFACE\n");
