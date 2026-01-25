@@ -162,52 +162,105 @@ static struct usb_device_descriptor device_descriptor = {
     .bNumConfigurations = 1,
 };
 
-/* Configuration Descriptor with interfaces and endpoints */
-struct xbox360_config {
-    struct usb_config_descriptor config;
-    struct usb_interface_descriptor interface;
-    struct usb_endpoint_descriptor ep_in;
-    struct usb_endpoint_descriptor ep_out;
-} __attribute__((packed));
+/*
+ * Xbox 360 Configuration Descriptor - Full 48-byte descriptor as raw bytes
+ * 
+ * This is the complete configuration descriptor matching a real Xbox 360
+ * wired controller. Using raw bytes ensures exact byte-for-byte match
+ * with the expected format, avoiding any padding issues from C structs.
+ * 
+ * The descriptor includes:
+ * - Configuration descriptor (9 bytes)
+ * - Interface descriptor (9 bytes)  
+ * - Xbox 360 vendor-specific descriptor (16 bytes) - CRITICAL for xpad driver!
+ * - Endpoint IN descriptor (7 bytes)
+ * - Endpoint OUT descriptor (7 bytes)
+ * Total: 48 bytes (0x30)
+ * 
+ * The vendor-specific descriptor (type 0x21) is essential for the xpad driver
+ * and Xbox 360 console to recognize this as a valid Xbox 360 controller.
+ * Without it, the host may enumerate the device but will disconnect shortly
+ * after because it doesn't recognize it as a valid controller.
+ */
+#define CONFIG_DESC_SIZE 48
 
-static struct xbox360_config config_descriptor = {
-    .config = {
-        .bLength             = USB_DT_CONFIG_SIZE,
-        .bDescriptorType     = USB_DT_CONFIG,
-        .wTotalLength        = __constant_cpu_to_le16(sizeof(struct xbox360_config)),
-        .bNumInterfaces      = 1,
-        .bConfigurationValue = 1,
-        .iConfiguration      = 0,
-        .bmAttributes        = USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
-        .bMaxPower           = 250,  /* 500mA */
-    },
-    .interface = {
-        .bLength            = USB_DT_INTERFACE_SIZE,
-        .bDescriptorType    = USB_DT_INTERFACE,
-        .bInterfaceNumber   = 0,
-        .bAlternateSetting  = 0,
-        .bNumEndpoints      = 2,
-        .bInterfaceClass    = 0xFF,  /* Vendor specific */
-        .bInterfaceSubClass = 0x5D,  /* Xbox Controller */
-        .bInterfaceProtocol = 0x01,  /* Wired controller */
-        .iInterface         = 0,
-    },
-    .ep_in = {
-        .bLength          = USB_DT_ENDPOINT_SIZE,
-        .bDescriptorType  = USB_DT_ENDPOINT,
-        .bEndpointAddress = EP_IN_ADDRESS,
-        .bmAttributes     = USB_ENDPOINT_XFER_INT,
-        .wMaxPacketSize   = __constant_cpu_to_le16(32),
-        .bInterval        = 4,  /* Poll every 8ms (2^(4-1) = 8) */
-    },
-    .ep_out = {
-        .bLength          = USB_DT_ENDPOINT_SIZE,
-        .bDescriptorType  = USB_DT_ENDPOINT,
-        .bEndpointAddress = EP_OUT_ADDRESS,
-        .bmAttributes     = USB_ENDPOINT_XFER_INT,
-        .wMaxPacketSize   = __constant_cpu_to_le16(32),
-        .bInterval        = 8,  /* Poll every 64ms */
-    },
+static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
+    /* Configuration Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x02,        /* bDescriptorType: Configuration */
+    0x30, 0x00,  /* wTotalLength: 48 bytes (little endian) */
+    0x01,        /* bNumInterfaces: 1 */
+    0x01,        /* bConfigurationValue: 1 */
+    0x00,        /* iConfiguration: None */
+    0xA0,        /* bmAttributes: Bus powered, remote wakeup */
+    0xFA,        /* bMaxPower: 500mA (250 * 2) */
+    
+    /* Interface Descriptor (9 bytes) */
+    0x09,        /* bLength: 9 bytes */
+    0x04,        /* bDescriptorType: Interface */
+    0x00,        /* bInterfaceNumber: 0 */
+    0x00,        /* bAlternateSetting: 0 */
+    0x02,        /* bNumEndpoints: 2 */
+    0xFF,        /* bInterfaceClass: Vendor Specific */
+    0x5D,        /* bInterfaceSubClass: Xbox 360 specific */
+    0x01,        /* bInterfaceProtocol: Input interface */
+    0x00,        /* iInterface: None */
+    
+    /* Xbox 360 Vendor-Specific Descriptor (16 bytes) */
+    0x10,        /* bLength: 16 bytes */
+    0x21,        /* bDescriptorType: Vendor (0x21) */
+    0x10, 0x01,  /* bcdVersion: 0x0110 (little endian) */
+    0x01,        /* bNumEndpoints: 1 endpoint pair */
+    0x25,        /* Reserved */
+    0x81,        /* bEndpointIn: EP1 IN */
+    0x14,        /* bReportSizeIn: 20 bytes */
+    0x00,        /* Reserved */
+    0x00,        /* Reserved */
+    0x00,        /* Reserved */
+    0x00,        /* Reserved */
+    0x13,        /* Reserved */
+    0x02,        /* bEndpointOut: EP2 OUT */
+    0x08,        /* bReportSizeOut: 8 bytes */
+    0x00,        /* Reserved */
+    
+    /* Endpoint Descriptor for EP1 IN (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x81,        /* bEndpointAddress: EP 1 IN */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes (little endian) */
+    0x04,        /* bInterval: 4ms */
+    
+    /* Endpoint Descriptor for EP2 OUT (7 bytes) */
+    0x07,        /* bLength: 7 bytes */
+    0x05,        /* bDescriptorType: Endpoint */
+    0x02,        /* bEndpointAddress: EP 2 OUT */
+    0x03,        /* bmAttributes: Interrupt */
+    0x20, 0x00,  /* wMaxPacketSize: 32 bytes (little endian) */
+    0x08,        /* bInterval: 8ms */
+};
+
+/* 
+ * Endpoint descriptors for USB_RAW_IOCTL_EP_ENABLE
+ * These are kept as structures for the ioctl calls but the raw descriptor
+ * above is used for GET_DESCRIPTOR responses.
+ */
+static struct usb_endpoint_descriptor ep_in_desc = {
+    .bLength          = USB_DT_ENDPOINT_SIZE,
+    .bDescriptorType  = USB_DT_ENDPOINT,
+    .bEndpointAddress = EP_IN_ADDRESS,
+    .bmAttributes     = USB_ENDPOINT_XFER_INT,
+    .wMaxPacketSize   = __constant_cpu_to_le16(32),
+    .bInterval        = 4,  /* Poll every 8ms (2^(4-1) = 8) */
+};
+
+static struct usb_endpoint_descriptor ep_out_desc = {
+    .bLength          = USB_DT_ENDPOINT_SIZE,
+    .bDescriptorType  = USB_DT_ENDPOINT,
+    .bEndpointAddress = EP_OUT_ADDRESS,
+    .bmAttributes     = USB_ENDPOINT_XFER_INT,
+    .wMaxPacketSize   = __constant_cpu_to_le16(32),
+    .bInterval        = 8,  /* Poll every 64ms */
 };
 
 /* String Descriptors */
@@ -353,10 +406,10 @@ static int setup_endpoints(void) {
     
     /* First pass: assign EP IN */
     for (int i = 0; i < num_eps && !ep_in_assigned; i++) {
-        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_in)) {
+        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &ep_in_desc)) {
             ep_used[i] = true;
             ep_in_assigned = true;
-            actual_ep_in_addr = config_descriptor.ep_in.bEndpointAddress;
+            actual_ep_in_addr = ep_in_desc.bEndpointAddress;
             if (debug_mode) {
                 printf("Assigned EP IN address: 0x%02X (using UDC endpoint %d)\n", actual_ep_in_addr, i);
             }
@@ -365,10 +418,10 @@ static int setup_endpoints(void) {
     
     /* Second pass: assign EP OUT (skipping already-used endpoints) */
     for (int i = 0; i < num_eps && !ep_out_assigned; i++) {
-        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_out)) {
+        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &ep_out_desc)) {
             ep_used[i] = true;
             ep_out_assigned = true;
-            actual_ep_out_addr = config_descriptor.ep_out.bEndpointAddress;
+            actual_ep_out_addr = ep_out_desc.bEndpointAddress;
             if (debug_mode) {
                 printf("Assigned EP OUT address: 0x%02X (using UDC endpoint %d)\n", actual_ep_out_addr, i);
             }
@@ -403,7 +456,7 @@ static int enable_endpoints_and_configure(void) {
         printf("Enabling endpoints...\n");
     }
     
-    ep_in_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_in);
+    ep_in_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &ep_in_desc);
     if (ep_in_fd < 0) {
         perror("Failed to enable EP IN");
         return -1;
@@ -412,7 +465,7 @@ static int enable_endpoints_and_configure(void) {
         printf("EP IN enabled (addr=0x%02X, handle=%d)\n", actual_ep_in_addr, ep_in_fd);
     }
     
-    ep_out_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_out);
+    ep_out_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &ep_out_desc);
     if (ep_out_fd < 0) {
         perror("Failed to enable EP OUT");
         return -1;
@@ -463,8 +516,8 @@ static void cleanup_endpoints(void) {
      * EP_IN_ADDRESS and EP_OUT_ADDRESS are direction bits only (0x80, 0x00).
      * The endpoint number will be assigned dynamically when we receive
      * the next CONNECT event. */
-    config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
-    config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
+    ep_in_desc.bEndpointAddress = EP_IN_ADDRESS;
+    ep_out_desc.bEndpointAddress = EP_OUT_ADDRESS;
     actual_ep_in_addr = 0;
     actual_ep_out_addr = 0;
 }
@@ -623,8 +676,8 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                         
                     case USB_DT_CONFIG:
                         if (debug_mode) printf("  -> GET_DESCRIPTOR: CONFIG\n");
-                        memcpy(buffer, &config_descriptor, sizeof(config_descriptor));
-                        length = sizeof(config_descriptor);
+                        memcpy(buffer, config_descriptor_raw, CONFIG_DESC_SIZE);
+                        length = CONFIG_DESC_SIZE;
                         break;
                         
                     case USB_DT_STRING:
