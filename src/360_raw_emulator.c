@@ -290,10 +290,14 @@ static bool assign_ep_address(struct usb_raw_ep_info *info,
     if (info->addr == USB_RAW_EP_ADDR_ANY) {
         /* UDC doesn't have fixed addresses, use a counter */
         static int addr_counter = 1;
-        ep->bEndpointAddress |= addr_counter++;
+        /* USB endpoint numbers use bits 0-3, so valid range is 1-15 */
+        if (addr_counter > 15) {
+            return false;  /* No more endpoint addresses available */
+        }
+        ep->bEndpointAddress |= (addr_counter++ & 0x0F);
     } else {
-        /* Use the UDC's fixed address */
-        ep->bEndpointAddress |= info->addr;
+        /* Use the UDC's fixed address (mask to ensure only endpoint number bits) */
+        ep->bEndpointAddress |= (info->addr & 0x0F);
     }
     
     return true;
@@ -327,24 +331,30 @@ static int setup_endpoints(void) {
                eps_info.eps[i].limits.maxpacket_limit);
     }
     
-    /* Assign endpoint addresses for EP IN (interrupt IN) */
+    /* Track which endpoints have been used */
+    bool ep_used[USB_RAW_EPS_NUM_MAX] = {false};
+    
+    /* Assign endpoint addresses - each endpoint can only be used once */
     bool ep_in_assigned = false;
     bool ep_out_assigned = false;
     
-    for (int i = 0; i < num_eps && (!ep_in_assigned || !ep_out_assigned); i++) {
-        if (!ep_in_assigned) {
-            if (assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_in)) {
-                ep_in_assigned = true;
-                actual_ep_in_addr = config_descriptor.ep_in.bEndpointAddress;
-                printf("Assigned EP IN address: 0x%02X\n", actual_ep_in_addr);
-            }
+    /* First pass: assign EP IN */
+    for (int i = 0; i < num_eps && !ep_in_assigned; i++) {
+        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_in)) {
+            ep_used[i] = true;
+            ep_in_assigned = true;
+            actual_ep_in_addr = config_descriptor.ep_in.bEndpointAddress;
+            printf("Assigned EP IN address: 0x%02X (using UDC endpoint %d)\n", actual_ep_in_addr, i);
         }
-        if (!ep_out_assigned) {
-            if (assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_out)) {
-                ep_out_assigned = true;
-                actual_ep_out_addr = config_descriptor.ep_out.bEndpointAddress;
-                printf("Assigned EP OUT address: 0x%02X\n", actual_ep_out_addr);
-            }
+    }
+    
+    /* Second pass: assign EP OUT (skipping already-used endpoints) */
+    for (int i = 0; i < num_eps && !ep_out_assigned; i++) {
+        if (!ep_used[i] && assign_ep_address(&eps_info.eps[i], &config_descriptor.ep_out)) {
+            ep_used[i] = true;
+            ep_out_assigned = true;
+            actual_ep_out_addr = config_descriptor.ep_out.bEndpointAddress;
+            printf("Assigned EP OUT address: 0x%02X (using UDC endpoint %d)\n", actual_ep_out_addr, i);
         }
     }
     
