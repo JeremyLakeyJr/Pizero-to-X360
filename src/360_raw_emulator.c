@@ -135,6 +135,13 @@ struct usb_raw_ep_io {
 
 #define XBOX360_REPORT_SIZE     20      /* 20-byte input report */
 
+/* Vendor request response sizes */
+#define XBOX360_CAPABILITIES_MAX_SIZE  20   /* Max size for capabilities response */
+#define XBOX360_SECURITY_MAX_SIZE      32   /* Max size for security response */
+
+/* Debug output interval (log every Nth report to avoid spam) */
+#define DEBUG_REPORT_LOG_INTERVAL      1000
+
 /* USB String Descriptor Indices */
 #define STRING_ID_MANUFACTURER  1
 #define STRING_ID_PRODUCT       2
@@ -305,7 +312,7 @@ static uint8_t config_descriptor_raw[CONFIG_DESC_SIZE] = {
     0x83,        /* bEndpointAddress: EP 3 IN */
     0x03,        /* bmAttributes: Interrupt */
     0x20, 0x00,  /* wMaxPacketSize: 32 bytes */
-    0x08,        /* bInterval: 8ms (was 64ms which caused "invalid bInterval" kernel warning) */
+    0x08,        /* bInterval: 8 frames (was 64 which caused kernel warning; 8ms at full-speed) */
     
     /* Endpoint Descriptor for EP3 OUT (7 bytes) */
     0x07,        /* bLength: 7 bytes */
@@ -1003,7 +1010,7 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                     /* For now, return zeros which satisfies basic enumeration */
                     if (wLength > 0) {
                         memset(buffer, 0, wLength > sizeof(buffer) ? sizeof(buffer) : wLength);
-                        length = wLength > 20 ? 20 : wLength;  /* Cap at 20 bytes */
+                        length = wLength > XBOX360_CAPABILITIES_MAX_SIZE ? XBOX360_CAPABILITIES_MAX_SIZE : wLength;
                     } else {
                         length = 0;
                     }
@@ -1026,7 +1033,7 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                     /* Return empty/zero response */
                     if (wLength > 0) {
                         memset(buffer, 0, wLength > sizeof(buffer) ? sizeof(buffer) : wLength);
-                        length = wLength > 32 ? 32 : wLength;
+                        length = wLength > XBOX360_SECURITY_MAX_SIZE ? XBOX360_SECURITY_MAX_SIZE : wLength;
                     } else {
                         length = 0;
                     }
@@ -1241,8 +1248,8 @@ static int send_report(const uint8_t *report, size_t length) {
     
     if (ret >= 0) {
         report_count++;
-        /* Only log every 1000th report to avoid spam */
-        if (debug_mode && (report_count % 1000 == 0)) {
+        /* Log periodically to avoid spam (controlled by DEBUG_REPORT_LOG_INTERVAL) */
+        if (debug_mode && (report_count % DEBUG_REPORT_LOG_INTERVAL == 0)) {
             printf("DEBUG: Sent %lu reports (last %d bytes)\n", 
                    (unsigned long)report_count, ret);
         }
