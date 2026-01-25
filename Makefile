@@ -124,6 +124,8 @@ run:
 	@echo "Note: Make sure your source controller is connected (Bluetooth or USB)."
 	@echo "Use 'make list-devices' to verify the controller is detected."
 	@echo ""
+	@echo "Press Ctrl+C to stop cleanly."
+	@echo ""
 	$(PYTHON) $(SRC_DIR)/input_bridge.py 2>/dev/stderr | $(EMULATOR_BIN)
 
 # Run C emulator only (without input bridge - for testing USB enumeration)

@@ -218,12 +218,20 @@ python3 src/input_bridge.py --input /dev/input/event0 | sudo ./bin/xbox360_raw_e
 sudo ./bin/xbox360_raw_emulator
 
 # Connect Pi Zero to Xbox 360 or PC via USB
+
+# To stop the emulator, press Ctrl+C
+# The emulator will shut down cleanly and release all USB resources
 ```
 
 **Important:** When using a Bluetooth controller:
 1. Pair and connect your Bluetooth controller first (e.g., via `bluetoothctl`)
 2. Verify it appears in `python3 src/input_bridge.py --list-devices`
 3. Then start the bridge with: `python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator`
+
+**Shutdown:** Press Ctrl+C once to stop the emulator cleanly. The signal handler will:
+- Stop both the input bridge and C emulator
+- Close all threads and USB connections
+- Exit within 1 second
 
 ## Project Structure
 
