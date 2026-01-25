@@ -440,6 +440,35 @@ static int enable_endpoints_and_configure(void) {
     return 0;
 }
 
+/*
+ * Clean up endpoints and reset state for re-enumeration.
+ * This is called on USB reset and disconnect events to prepare
+ * for potential reconnection.
+ */
+static void cleanup_endpoints(void) {
+    /* Disable endpoints if they were configured */
+    if (endpoints_configured) {
+        if (ep_in_fd >= 0) {
+            ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_in_fd);
+        }
+        if (ep_out_fd >= 0) {
+            ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_out_fd);
+        }
+    }
+    endpoints_configured = false;
+    ep_in_fd = -1;
+    ep_out_fd = -1;
+    
+    /* Reset endpoint addresses so they can be reassigned.
+     * EP_IN_ADDRESS and EP_OUT_ADDRESS are direction bits only (0x80, 0x00).
+     * The endpoint number will be assigned dynamically when we receive
+     * the next CONNECT event. */
+    config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
+    config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
+    actual_ep_in_addr = 0;
+    actual_ep_out_addr = 0;
+}
+
 /* Signal handler for clean shutdown */
 static void signal_handler(int sig) {
     printf("Received signal %d, shutting down...\n", sig);
@@ -811,49 +840,15 @@ static void *event_loop_thread(void *arg) {
             
         case USB_RAW_EVENT_RESET:
             printf("USB reset\n");
-            /* On reset, disable endpoints and prepare for re-enumeration */
-            if (endpoints_configured) {
-                /* Disable endpoints before reassigning */
-                if (ep_in_fd >= 0) {
-                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_in_fd);
-                }
-                if (ep_out_fd >= 0) {
-                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_out_fd);
-                }
-            }
-            endpoints_configured = false;
-            ep_in_fd = -1;
-            ep_out_fd = -1;
-            /* Reset endpoint addresses so they can be reassigned.
-             * EP_IN_ADDRESS and EP_OUT_ADDRESS are direction bits only (0x80, 0x00).
-             * The endpoint number will be assigned dynamically when we receive
-             * the next CONNECT event. */
-            config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
-            config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
-            actual_ep_in_addr = 0;
-            actual_ep_out_addr = 0;
+            /* On reset, clean up endpoints and prepare for re-enumeration */
+            cleanup_endpoints();
             break;
             
         case USB_RAW_EVENT_DISCONNECT:
             printf("USB disconnected - waiting for reconnection...\n");
             usb_connected = false;
-            /* Clean up endpoints similar to reset, allowing reconnection */
-            if (endpoints_configured) {
-                if (ep_in_fd >= 0) {
-                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_in_fd);
-                }
-                if (ep_out_fd >= 0) {
-                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_out_fd);
-                }
-            }
-            endpoints_configured = false;
-            ep_in_fd = -1;
-            ep_out_fd = -1;
-            /* Reset endpoint addresses for next connection */
-            config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
-            config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
-            actual_ep_in_addr = 0;
-            actual_ep_out_addr = 0;
+            /* Clean up endpoints to allow reconnection */
+            cleanup_endpoints();
             /* Continue running - allow reconnection instead of exiting */
             break;
             
