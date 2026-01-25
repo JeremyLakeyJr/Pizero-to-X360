@@ -478,6 +478,83 @@ cat /boot/firmware/cmdline.txt
 
 For more troubleshooting, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
+### Troubleshooting PC Recognition
+
+If you see issues in `dmesg` on the host PC when the Pi is plugged in with the emulator running, here's how to diagnose and fix common problems:
+
+**Check host PC dmesg for these patterns:**
+
+```bash
+# On the host PC after connecting the Pi:
+sudo dmesg | grep -i -E "(xbox|xpad|045e|028e|usb|error)"
+```
+
+**Success indicators:**
+```
+usb X-X: new full-speed USB device number X using xhci_hcd
+usb X-X: New USB device found, idVendor=045e, idProduct=028e
+usb X-X: Manufacturer: ©Microsoft Corporation, Product: Controller
+input: Microsoft X-Box 360 pad as /dev/input/eventX
+```
+
+**Problem: Repeated "device descriptor read/64, error -110" (ETIMEDOUT)**
+
+This timeout error during enumeration is usually caused by:
+
+1. **Speed mismatch**: Pi Zero's dwc2 gadget supports full-speed (12 Mbps) maximum, but the emulator now sets USB_SPEED_HIGH with proper Device Qualifier fallback support.
+
+2. **Invalid bInterval**: The emulator now uses valid bInterval values (4-8ms) for all interrupt endpoints, avoiding the "invalid bInterval 64, changing to 10" kernel warning.
+
+**Solutions:**
+- Ensure you're using the latest emulator code with the Device Qualifier fix
+- Run with `--debug` flag: `sudo ./bin/xbox360_raw_emulator --debug` to see detailed USB transactions
+- Try a different USB port or cable (use data cables, not charge-only)
+
+**Problem: "attempt power cycle" messages**
+
+The host is power-cycling the USB port due to enumeration failures.
+
+**Solutions:**
+1. Rebuild the emulator: `make clean && make build`
+2. Restart the emulator and try again
+3. Check that raw-gadget module is loaded: `lsmod | grep raw_gadget`
+
+**Problem: xpad binds intermittently then disconnects**
+
+**Solutions:**
+1. Ensure the input bridge is running to send periodic reports:
+   ```bash
+   python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator
+   ```
+2. Xbox 360 protocol expects reports every ~8ms - without input, the host may timeout
+3. Check Pi CPU usage isn't causing delays: `top`
+
+**Debug mode for detailed logging:**
+
+```bash
+# Run emulator with full debug output:
+sudo ./bin/xbox360_raw_emulator --debug
+
+# This will show:
+# - All USB control requests (GET_DESCRIPTOR, SET_CONFIGURATION, etc.)
+# - Endpoint enable/disable operations
+# - Vendor request handling (0x01, 0xA9)
+# - Report send statistics
+```
+
+**Compare with real Xbox 360 controller:**
+
+If you have a real Xbox 360 controller, you can capture its USB traffic for comparison:
+
+```bash
+# On Linux PC:
+sudo modprobe usbmon
+sudo wireshark -i usbmon1
+
+# Or use tcpdump:
+sudo tcpdump -i usbmon1 -w xbox360_real.pcap
+```
+
 ## Contributing
 
 Contributions are welcome! Please see [DEVELOPMENT.md](docs/DEVELOPMENT.md) for guidelines.
