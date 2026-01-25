@@ -117,18 +117,18 @@ def run_bridge(input_device: Optional[str] = None,
     """
     global _stop_requested
     
-    if not EVDEV_AVAILABLE:
-        print("Error: evdev module not available. Install with: pip3 install evdev", 
-              file=sys.stderr)
-        sys.exit(1)
-    
-    # Set up signal handlers for graceful shutdown
+    # Set up signal handlers for graceful shutdown FIRST, before any other operations
     # SIGPIPE: Broken pipe (C emulator exited)
     # SIGINT: Ctrl+C
     # SIGTERM: termination request
     signal.signal(signal.SIGPIPE, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
+    
+    if not EVDEV_AVAILABLE:
+        print("Error: evdev module not available. Install with: pip3 install evdev", 
+              file=sys.stderr)
+        sys.exit(1)
     
     # Initialize input handler
     try:
@@ -156,6 +156,7 @@ def run_bridge(input_device: Optional[str] = None,
     
     report_count = 0
     last_time = time.time()
+    stopped_by_signal = False
     
     try:
         while not _stop_requested:
@@ -193,9 +194,13 @@ def run_bridge(input_device: Optional[str] = None,
             if elapsed < interval:
                 time.sleep(interval - elapsed)
             last_time = time.time()
+        
+        # If we exited because _stop_requested was set, it was due to a signal
+        if _stop_requested:
+            stopped_by_signal = True
             
     except KeyboardInterrupt:
-        pass  # Already handled by signal handler
+        stopped_by_signal = True
     finally:
         handler.close()
         # Close stdout_binary to ensure no more writes
@@ -204,7 +209,8 @@ def run_bridge(input_device: Optional[str] = None,
                 stdout_binary.close()
             except (BrokenPipeError, OSError):
                 pass  # Ignore errors on close
-        print(f"\nStopped by user", file=sys.stderr)
+        if stopped_by_signal:
+            print("\nStopped by user", file=sys.stderr)
         print(f"Total reports sent: {report_count}", file=sys.stderr)
 
 
