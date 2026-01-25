@@ -239,10 +239,14 @@ static int fd = -1;              /* raw-gadget file descriptor */
 static int ep_in_fd = -1;        /* EP1 IN file descriptor */
 static int ep_out_fd = -1;       /* EP1 OUT file descriptor */
 static volatile bool running = true;
+static volatile bool endpoints_configured = false;  /* Set when endpoints are ready */
 
 /* Dynamically assigned endpoint addresses */
 static uint8_t actual_ep_in_addr = 0;
 static uint8_t actual_ep_out_addr = 0;
+
+/* Debug mode flag */
+static bool debug_mode = false;
 
 /*
  * Try to assign an endpoint address from the UDC to our endpoint descriptor.
@@ -309,7 +313,8 @@ static bool assign_ep_address(struct usb_raw_ep_info *info,
 
 /*
  * Query available endpoints from the UDC and assign addresses to our endpoints.
- * This must be called after USB_RAW_IOCTL_INIT.
+ * This must be called AFTER receiving USB_RAW_EVENT_CONNECT (not just after INIT).
+ * Calling before the connect event results in "Invalid argument" error.
  */
 static int setup_endpoints(void) {
     struct usb_raw_eps_info eps_info;
@@ -321,18 +326,20 @@ static int setup_endpoints(void) {
         return -1;
     }
     
-    printf("UDC has %d available endpoints:\n", num_eps);
-    for (int i = 0; i < num_eps; i++) {
-        printf("  EP %d: name=%s, addr=%u, type=%s%s%s, dir=%s%s, maxpacket=%u\n",
-               i,
-               eps_info.eps[i].name,
-               eps_info.eps[i].addr,
-               eps_info.eps[i].caps.type_iso ? "iso " : "",
-               eps_info.eps[i].caps.type_bulk ? "bulk " : "",
-               eps_info.eps[i].caps.type_int ? "int " : "",
-               eps_info.eps[i].caps.dir_in ? "in " : "",
-               eps_info.eps[i].caps.dir_out ? "out" : "",
-               eps_info.eps[i].limits.maxpacket_limit);
+    if (debug_mode) {
+        printf("UDC has %d available endpoints:\n", num_eps);
+        for (int i = 0; i < num_eps; i++) {
+            printf("  EP %d: name=%s, addr=%u, type=%s%s%s, dir=%s%s, maxpacket=%u\n",
+                   i,
+                   eps_info.eps[i].name,
+                   eps_info.eps[i].addr,
+                   eps_info.eps[i].caps.type_iso ? "iso " : "",
+                   eps_info.eps[i].caps.type_bulk ? "bulk " : "",
+                   eps_info.eps[i].caps.type_int ? "int " : "",
+                   eps_info.eps[i].caps.dir_in ? "in " : "",
+                   eps_info.eps[i].caps.dir_out ? "out" : "",
+                   eps_info.eps[i].limits.maxpacket_limit);
+        }
     }
     
     /* Track which endpoints have been used */
@@ -348,7 +355,9 @@ static int setup_endpoints(void) {
             ep_used[i] = true;
             ep_in_assigned = true;
             actual_ep_in_addr = config_descriptor.ep_in.bEndpointAddress;
-            printf("Assigned EP IN address: 0x%02X (using UDC endpoint %d)\n", actual_ep_in_addr, i);
+            if (debug_mode) {
+                printf("Assigned EP IN address: 0x%02X (using UDC endpoint %d)\n", actual_ep_in_addr, i);
+            }
         }
     }
     
@@ -358,7 +367,9 @@ static int setup_endpoints(void) {
             ep_used[i] = true;
             ep_out_assigned = true;
             actual_ep_out_addr = config_descriptor.ep_out.bEndpointAddress;
-            printf("Assigned EP OUT address: 0x%02X (using UDC endpoint %d)\n", actual_ep_out_addr, i);
+            if (debug_mode) {
+                printf("Assigned EP OUT address: 0x%02X (using UDC endpoint %d)\n", actual_ep_out_addr, i);
+            }
         }
     }
     
@@ -371,6 +382,58 @@ static int setup_endpoints(void) {
         fprintf(stderr, "Error: Could not find suitable endpoint for EP OUT\n");
         return -1;
     }
+    
+    return 0;
+}
+
+/*
+ * Enable endpoints and configure the device.
+ * This is called when we receive SET_CONFIGURATION from the host.
+ * Returns 0 on success, -1 on error.
+ */
+static int enable_endpoints_and_configure(void) {
+    if (endpoints_configured) {
+        /* Already configured */
+        return 0;
+    }
+    
+    if (debug_mode) {
+        printf("Enabling endpoints...\n");
+    }
+    
+    ep_in_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_in);
+    if (ep_in_fd < 0) {
+        perror("Failed to enable EP IN");
+        return -1;
+    }
+    if (debug_mode) {
+        printf("EP IN enabled (addr=0x%02X, handle=%d)\n", actual_ep_in_addr, ep_in_fd);
+    }
+    
+    ep_out_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_out);
+    if (ep_out_fd < 0) {
+        perror("Failed to enable EP OUT");
+        return -1;
+    }
+    if (debug_mode) {
+        printf("EP OUT enabled (addr=0x%02X, handle=%d)\n", actual_ep_out_addr, ep_out_fd);
+    }
+    
+    /* Set VBUS power draw (500mA) */
+    uint32_t power = 500;
+    if (ioctl(fd, USB_RAW_IOCTL_VBUS_DRAW, &power) < 0) {
+        perror("USB_RAW_IOCTL_VBUS_DRAW failed");
+        /* Non-fatal, continue */
+    }
+    
+    /* Configure device */
+    if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE) < 0) {
+        perror("USB_RAW_IOCTL_CONFIGURE failed");
+        return -1;
+    }
+    
+    endpoints_configured = true;
+    printf("Device configured and endpoints enabled\n");
     
     return 0;
 }
@@ -506,10 +569,12 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
     uint8_t buffer[512];
     int length = 0;
     
-    printf("Control request: bRequestType=0x%02X, bRequest=0x%02X, wValue=0x%04X, wIndex=0x%04X, wLength=%d\n",
-           setup->bRequestType, setup->bRequest, 
-           __le16_to_cpu(setup->wValue), __le16_to_cpu(setup->wIndex),
-           __le16_to_cpu(setup->wLength));
+    if (debug_mode) {
+        printf("Control request: bRequestType=0x%02X, bRequest=0x%02X, wValue=0x%04X, wIndex=0x%04X, wLength=%d\n",
+               setup->bRequestType, setup->bRequest, 
+               __le16_to_cpu(setup->wValue), __le16_to_cpu(setup->wIndex),
+               __le16_to_cpu(setup->wLength));
+    }
     
     /* Handle standard requests */
     if ((setup->bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD) {
@@ -520,19 +585,19 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                 
                 switch (desc_type) {
                     case USB_DT_DEVICE:
-                        printf("  -> GET_DESCRIPTOR: DEVICE\n");
+                        if (debug_mode) printf("  -> GET_DESCRIPTOR: DEVICE\n");
                         memcpy(buffer, &device_descriptor, sizeof(device_descriptor));
                         length = sizeof(device_descriptor);
                         break;
                         
                     case USB_DT_CONFIG:
-                        printf("  -> GET_DESCRIPTOR: CONFIG\n");
+                        if (debug_mode) printf("  -> GET_DESCRIPTOR: CONFIG\n");
                         memcpy(buffer, &config_descriptor, sizeof(config_descriptor));
                         length = sizeof(config_descriptor);
                         break;
                         
                     case USB_DT_STRING:
-                        printf("  -> GET_DESCRIPTOR: STRING (index %d)\n", desc_index);
+                        if (debug_mode) printf("  -> GET_DESCRIPTOR: STRING (index %d)\n", desc_index);
                         if (desc_index == 0) {
                             memcpy(buffer, &string_lang, 4);
                             length = 4;
@@ -543,37 +608,47 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
                             memcpy(buffer, product_string, product_string[0]);
                             length = product_string[0];
                         } else {
-                            printf("  -> Unknown string index %d\n", desc_index);
+                            if (debug_mode) printf("  -> Unknown string index %d\n", desc_index);
                             return -1;
                         }
                         break;
                         
                     default:
-                        printf("  -> Unknown descriptor type 0x%02X\n", desc_type);
+                        if (debug_mode) printf("  -> Unknown descriptor type 0x%02X\n", desc_type);
                         return -1;
                 }
                 break;
             }
             
-            case USB_REQ_SET_CONFIGURATION:
-                printf("  -> SET_CONFIGURATION: %d\n", __le16_to_cpu(setup->wValue));
+            case USB_REQ_SET_CONFIGURATION: {
+                int config_value = __le16_to_cpu(setup->wValue);
+                if (debug_mode) printf("  -> SET_CONFIGURATION: %d\n", config_value);
+                
+                /* Enable endpoints and configure device when configuration is set */
+                if (config_value > 0) {
+                    if (enable_endpoints_and_configure() < 0) {
+                        fprintf(stderr, "Failed to enable endpoints on SET_CONFIGURATION\n");
+                        return -1;
+                    }
+                }
                 /* Acknowledge with zero-length packet */
                 length = 0;
                 break;
+            }
                 
             case USB_REQ_SET_INTERFACE:
-                printf("  -> SET_INTERFACE\n");
+                if (debug_mode) printf("  -> SET_INTERFACE\n");
                 length = 0;
                 break;
                 
             default:
-                printf("  -> Unsupported standard request 0x%02X\n", setup->bRequest);
+                if (debug_mode) printf("  -> Unsupported standard request 0x%02X\n", setup->bRequest);
                 return -1;
         }
     }
     /* Handle vendor-specific requests (Xbox 360 init) */
     else if ((setup->bRequestType & USB_TYPE_MASK) == USB_TYPE_VENDOR) {
-        printf("  -> VENDOR request 0x%02X\n", setup->bRequest);
+        if (debug_mode) printf("  -> VENDOR request 0x%02X\n", setup->bRequest);
         
         /* Xbox 360 controllers respond to vendor request 0x01 during init
          * TODO: Implement proper vendor request responses based on:
@@ -589,11 +664,11 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
     }
     /* Handle class-specific requests */
     else if ((setup->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS) {
-        printf("  -> CLASS request 0x%02X\n", setup->bRequest);
+        if (debug_mode) printf("  -> CLASS request 0x%02X\n", setup->bRequest);
         length = 0;
     }
     else {
-        printf("  -> Unknown request type 0x%02X\n", setup->bRequestType);
+        if (debug_mode) printf("  -> Unknown request type 0x%02X\n", setup->bRequestType);
         return -1;
     }
     
@@ -641,47 +716,102 @@ static int handle_control_request(struct usb_ctrlrequest *setup) {
     return 0;
 }
 
-/* Event loop for control endpoint */
-static void *control_thread(void *arg) {
-    printf("Control thread started\n");
+/*
+ * Main event loop for handling USB events.
+ * This replaces the previous control_thread approach.
+ * Events are fetched using USB_RAW_IOCTL_EVENT_FETCH.
+ */
+static void *event_loop_thread(void *arg) {
+    if (debug_mode) {
+        printf("Event loop thread started\n");
+    }
+    
+    /* Buffer for event + control request data */
+    struct {
+        struct usb_raw_event event;
+        uint8_t data[256];
+    } event_buffer;
     
     while (running) {
-        struct usb_raw_ep_io io = {0};
-        io.ep = 0;
-        io.flags = 0;
-        io.length = 64;
+        memset(&event_buffer, 0, sizeof(event_buffer));
+        event_buffer.event.type = 0;
+        event_buffer.event.length = sizeof(struct usb_ctrlrequest);
         
-        /* Read control request from EP0 */
-        int ret = ioctl(fd, USB_RAW_IOCTL_EP0_READ, &io);
+        /* Fetch next USB event */
+        int ret = ioctl(fd, USB_RAW_IOCTL_EVENT_FETCH, &event_buffer);
         if (ret < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            perror("EP0 read failed");
+            perror("USB_RAW_IOCTL_EVENT_FETCH failed");
             break;
         }
         
-        if (ret < sizeof(struct usb_ctrlrequest)) {
-            printf("Short read on EP0: %d bytes\n", ret);
-            continue;
-        }
-        
-        /* Handle the request */
-        struct usb_ctrlrequest *setup = (struct usb_ctrlrequest *)io.data;
-        if (handle_control_request(setup) < 0) {
-            printf("Failed to handle control request\n");
-            /* TODO: Send STALL on EP0 for proper error handling */
-            /* For now, continue without STALL which works for most cases */
+        switch (event_buffer.event.type) {
+        case USB_RAW_EVENT_CONNECT:
+            printf("USB connected\n");
+            /* Now we can query endpoint info */
+            if (setup_endpoints() < 0) {
+                fprintf(stderr, "Failed to setup endpoints on connect\n");
+                running = false;
+            }
+            break;
+            
+        case USB_RAW_EVENT_CONTROL:
+            /* Handle control transfer */
+            if (event_buffer.event.length >= sizeof(struct usb_ctrlrequest)) {
+                struct usb_ctrlrequest *setup = (struct usb_ctrlrequest *)event_buffer.event.data;
+                if (handle_control_request(setup) < 0) {
+                    if (debug_mode) {
+                        printf("Failed to handle control request\n");
+                    }
+                    /* TODO: Send STALL on EP0 for proper error handling */
+                }
+            }
+            break;
+            
+        case USB_RAW_EVENT_SUSPEND:
+            if (debug_mode) printf("USB suspended\n");
+            break;
+            
+        case USB_RAW_EVENT_RESUME:
+            if (debug_mode) printf("USB resumed\n");
+            break;
+            
+        case USB_RAW_EVENT_RESET:
+            printf("USB reset\n");
+            /* On reset, endpoints need to be re-enabled after next SET_CONFIGURATION */
+            endpoints_configured = false;
+            ep_in_fd = -1;
+            ep_out_fd = -1;
+            /* Reset endpoint addresses so they can be reassigned */
+            config_descriptor.ep_in.bEndpointAddress = USB_DIR_IN;
+            config_descriptor.ep_out.bEndpointAddress = USB_DIR_OUT;
+            actual_ep_in_addr = 0;
+            actual_ep_out_addr = 0;
+            break;
+            
+        case USB_RAW_EVENT_DISCONNECT:
+            printf("USB disconnected\n");
+            break;
+            
+        default:
+            if (debug_mode) {
+                printf("Unknown event type: %d\n", event_buffer.event.type);
+            }
+            break;
         }
     }
     
-    printf("Control thread exiting\n");
+    if (debug_mode) {
+        printf("Event loop thread exiting\n");
+    }
     return NULL;
 }
 
 /* Send input report via EP1 IN */
 static int send_report(const uint8_t *report, size_t length) {
-    if (ep_in_fd < 0) {
+    if (!endpoints_configured || ep_in_fd < 0) {
         return -1;
     }
     
@@ -707,7 +837,7 @@ static int send_report(const uint8_t *report, size_t length) {
  */
 static int receive_output_report(uint8_t *buffer, size_t max_length) __attribute__((unused));
 static int receive_output_report(uint8_t *buffer, size_t max_length) {
-    if (ep_out_fd < 0) {
+    if (!endpoints_configured || ep_out_fd < 0) {
         return -1;
     }
     
@@ -772,6 +902,20 @@ int main(int argc, char **argv) {
     printf("Xbox 360 Controller Emulator (raw-gadget)\n");
     printf("=========================================\n\n");
     
+    /* Parse arguments */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--debug") == 0 || strcmp(argv[i], "-d") == 0) {
+            debug_mode = true;
+            printf("Debug mode enabled\n");
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("Usage: %s [OPTIONS]\n", argv[0]);
+            printf("Options:\n");
+            printf("  --debug, -d   Enable debug output\n");
+            printf("  --help, -h    Show this help message\n");
+            return 0;
+        }
+    }
+    
     setup_signals();
     
     /* Open raw-gadget device */
@@ -779,52 +923,17 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    /* Initialize */
+    /* Initialize raw-gadget with UDC */
     if (init_raw_gadget() < 0) {
         close(fd);
         return 1;
     }
     
-    /* Query available endpoints and assign addresses dynamically */
-    if (setup_endpoints() < 0) {
-        close(fd);
-        return 1;
-    }
-    
-    /* Enable endpoints */
-    printf("Enabling endpoints...\n");
-    
-    ep_in_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_in);
-    if (ep_in_fd < 0) {
-        perror("Failed to enable EP IN");
-        close(fd);
-        return 1;
-    }
-    printf("EP IN enabled (addr=0x%02X, handle=%d)\n", actual_ep_in_addr, ep_in_fd);
-    
-    ep_out_fd = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE, &config_descriptor.ep_out);
-    if (ep_out_fd < 0) {
-        perror("Failed to enable EP OUT");
-        close(fd);
-        return 1;
-    }
-    printf("EP OUT enabled (addr=0x%02X, handle=%d)\n", actual_ep_out_addr, ep_out_fd);
-    
-    /* Configure device */
-    if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE) < 0) {
-        perror("USB_RAW_IOCTL_CONFIGURE failed");
-        close(fd);
-        return 1;
-    }
-    
-    /* Set VBUS power draw (500mA) */
-    uint32_t power = 500;
-    if (ioctl(fd, USB_RAW_IOCTL_VBUS_DRAW, &power) < 0) {
-        perror("USB_RAW_IOCTL_VBUS_DRAW failed");
-        /* Non-fatal, continue */
-    }
-    
-    /* Run the gadget */
+    /*
+     * IMPORTANT: Run the gadget BEFORE trying to get endpoint info.
+     * USB_RAW_IOCTL_EPS_INFO requires the gadget to be running and
+     * a connect event to have occurred.
+     */
     printf("Running USB gadget...\n");
     if (ioctl(fd, USB_RAW_IOCTL_RUN) < 0) {
         perror("USB_RAW_IOCTL_RUN failed");
@@ -833,14 +942,14 @@ int main(int argc, char **argv) {
     }
     
     printf("\n*** Xbox 360 Controller is now active ***\n");
-    printf("Waiting for USB enumeration...\n");
+    printf("Waiting for USB connection...\n");
     printf("Connect Pi Zero to Xbox 360 or PC via USB\n");
     printf("Send 20-byte input reports via stdin (from Python)\n\n");
     
-    /* Start control thread */
-    pthread_t ctrl_thread;
-    if (pthread_create(&ctrl_thread, NULL, control_thread, NULL) != 0) {
-        perror("Failed to create control thread");
+    /* Start event loop thread (handles USB events including connect/control) */
+    pthread_t event_thread;
+    if (pthread_create(&event_thread, NULL, event_loop_thread, NULL) != 0) {
+        perror("Failed to create event loop thread");
         close(fd);
         return 1;
     }
@@ -854,7 +963,7 @@ int main(int argc, char **argv) {
     }
     
     /* Wait for threads */
-    pthread_join(ctrl_thread, NULL);
+    pthread_join(event_thread, NULL);
     pthread_join(in_thread, NULL);
     
     /* Cleanup */
