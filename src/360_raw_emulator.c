@@ -45,6 +45,7 @@
 #define USB_RAW_IOCTL_EP0_READ          _IOWR('U', 3, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP0_WRITE         _IOWR('U', 4, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP_ENABLE         _IOW('U', 5, struct usb_endpoint_descriptor)
+#define USB_RAW_IOCTL_EP_DISABLE        _IOW('U', 6, uint32_t)
 #define USB_RAW_IOCTL_EP_WRITE          _IOWR('U', 7, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP_READ           _IOWR('U', 8, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_CONFIGURE         _IO('U', 9)
@@ -780,13 +781,25 @@ static void *event_loop_thread(void *arg) {
             
         case USB_RAW_EVENT_RESET:
             printf("USB reset\n");
-            /* On reset, endpoints need to be re-enabled after next SET_CONFIGURATION */
+            /* On reset, disable endpoints and prepare for re-enumeration */
+            if (endpoints_configured) {
+                /* Disable endpoints before reassigning */
+                if (ep_in_fd >= 0) {
+                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_in_fd);
+                }
+                if (ep_out_fd >= 0) {
+                    ioctl(fd, USB_RAW_IOCTL_EP_DISABLE, ep_out_fd);
+                }
+            }
             endpoints_configured = false;
             ep_in_fd = -1;
             ep_out_fd = -1;
-            /* Reset endpoint addresses so they can be reassigned */
-            config_descriptor.ep_in.bEndpointAddress = USB_DIR_IN;
-            config_descriptor.ep_out.bEndpointAddress = USB_DIR_OUT;
+            /* Reset endpoint addresses so they can be reassigned.
+             * EP_IN_ADDRESS and EP_OUT_ADDRESS are direction bits only (0x80, 0x00).
+             * The endpoint number will be assigned dynamically when we receive
+             * the next CONNECT event. */
+            config_descriptor.ep_in.bEndpointAddress = EP_IN_ADDRESS;
+            config_descriptor.ep_out.bEndpointAddress = EP_OUT_ADDRESS;
             actual_ep_in_addr = 0;
             actual_ep_out_addr = 0;
             break;
