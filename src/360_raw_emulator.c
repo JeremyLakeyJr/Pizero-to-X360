@@ -414,7 +414,6 @@ static uint8_t product_string[] = {
 };
 
 /* Serial Number: "08FEC93" */
-/* Serial Number: "08FEC93" */
 static uint8_t serial_string[] = {
     18, USB_DT_STRING,
     '0', 0, '8', 0, 'F', 0, 'E', 0, 'C', 0, '9', 0, '3', 0,
