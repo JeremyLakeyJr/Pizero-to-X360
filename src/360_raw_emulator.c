@@ -499,7 +499,7 @@ static struct usb_qualifier_descriptor device_qualifier = {
 static int fd = -1;              /* raw-gadget file descriptor */
 static int ep_in_fd = -1;        /* EP1 IN file descriptor */
 static int ep_out_fd = -1;       /* EP1 OUT file descriptor */
-static volatile bool running = true;
+static volatile sig_atomic_t running = 1;
 static volatile bool endpoints_configured = false;  /* Set when endpoints are ready */
 static volatile bool usb_connected = false;         /* Set when USB is connected */
 
@@ -780,13 +780,23 @@ static void cleanup_endpoints(void) {
 /* Signal handler for clean shutdown */
 static void signal_handler(int sig) {
     printf("Received signal %d, shutting down...\n", sig);
-    running = false;
+    running = 0;
 }
 
 /* Setup signal handlers */
 static void setup_signals(void) {
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    /* Don't automatically restart interrupted system calls */
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    
+    /* Ignore SIGPIPE to prevent termination on broken pipe */
+    signal(SIGPIPE, SIG_IGN);
 }
 
 /* Open raw-gadget device */
@@ -1217,6 +1227,10 @@ static void *event_loop_thread(void *arg) {
         int ret = ioctl(fd, USB_RAW_IOCTL_EVENT_FETCH, &event_buffer);
         if (ret < 0) {
             if (errno == EINTR) {
+                /* Signal received - check if we should exit */
+                if (!running) {
+                    break;
+                }
                 continue;
             }
             perror("USB_RAW_IOCTL_EVENT_FETCH failed");
@@ -1230,7 +1244,7 @@ static void *event_loop_thread(void *arg) {
             /* Now we can query endpoint info */
             if (setup_endpoints() < 0) {
                 fprintf(stderr, "Failed to setup endpoints on connect\n");
-                running = false;
+                running = 0;
             }
             break;
             
