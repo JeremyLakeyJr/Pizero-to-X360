@@ -206,12 +206,24 @@ If you prefer to run manually instead of using the systemd service:
 
 ```bash
 # After reboot, the raw-gadget module should auto-load
-# Run the emulator (it will set up the USB gadget automatically)
+
+# Method 1: Run with input bridge (RECOMMENDED for Bluetooth/USB controllers)
+# The input_bridge.py reads from your source controller and pipes reports to the emulator
+python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator
+
+# Method 2: Specify a specific input device
+python3 src/input_bridge.py --input /dev/input/event0 | sudo ./bin/xbox360_raw_emulator
+
+# Method 3: Run C emulator only (no controller input - for testing USB enumeration)
 sudo ./bin/xbox360_raw_emulator
 
-# The Python input handler runs automatically within the emulator
 # Connect Pi Zero to Xbox 360 or PC via USB
 ```
+
+**Important:** When using a Bluetooth controller:
+1. Pair and connect your Bluetooth controller first (e.g., via `bluetoothctl`)
+2. Verify it appears in `python3 src/input_bridge.py --list-devices`
+3. Then start the bridge with: `python3 src/input_bridge.py | sudo ./bin/xbox360_raw_emulator`
 
 ## Project Structure
 
@@ -222,9 +234,10 @@ Pizero-to-X360/
 ├── Makefile                     # Build and install automation
 ├── src/
 │   ├── 360_raw_emulator.c       # C emulator using raw-gadget
-│   ├── xbox360_emulator.py      # Python input bridge (reads source controller)
+│   ├── input_bridge.py          # Bridges source controller to C emulator (stdout pipe)
+│   ├── xbox360_emulator.py      # Legacy Python emulator (configfs method)
 │   ├── xbox360_descriptors.py   # USB descriptors for Xbox 360 controller
-│   ├── input_handler.py         # Input reading from source controller
+│   ├── input_handler.py         # Input reading from source controller via evdev
 │   └── report_formatter.py      # Format input reports
 ├── bin/
 │   └── xbox360_raw_emulator     # Compiled C emulator binary

@@ -30,8 +30,8 @@
 [Unit]
 Description=Xbox 360 Controller Emulator for Raspberry Pi Zero (raw-gadget)
 Documentation=https://github.com/JeremyLakeyJr/Pizero-to-X360
-# Wait for basic system to be ready
-After=local-fs.target sysinit.target
+# Wait for basic system to be ready and Bluetooth (if using BT controller)
+After=local-fs.target sysinit.target bluetooth.target
 # We need dwc2 overlay loaded (happens early in boot)
 Wants=sys-subsystem-usb-devices.target
 
@@ -47,9 +47,13 @@ ExecStartPre=/bin/sh -c 'modprobe raw_gadget 2>/dev/null || ([ -f /home/lakey/Pi
 ExecStartPre=/bin/sh -c 'test -c /dev/raw-gadget || (echo "ERROR: /dev/raw-gadget not found. Is raw_gadget module loaded?" && exit 1)'
 # 4. Verify UDC is available
 ExecStartPre=/bin/sh -c 'ls /sys/class/udc/ | grep -q . || (echo "Warning: No UDC available yet, dwc2 may not be ready" && sleep 2)'
+# 5. Brief delay to allow Bluetooth controller to be ready
+ExecStartPre=/bin/sh -c 'sleep 2'
 
-# Start the raw-gadget emulator binary
-ExecStart=/home/lakey/Pizero-to-X360/bin/xbox360_raw_emulator
+# Start the Python input bridge piped to the C raw-gadget emulator
+# The input bridge reads from the source controller (Bluetooth/USB) and writes
+# 20-byte Xbox 360 input reports to stdout, which are piped to the C emulator
+ExecStart=/bin/sh -c 'python3 /home/lakey/Pizero-to-X360/src/input_bridge.py 2>/var/log/xbox360-input.log | /home/lakey/Pizero-to-X360/bin/xbox360_raw_emulator'
 
 # Graceful shutdown handling
 ExecStop=/bin/kill -TERM $MAINPID
