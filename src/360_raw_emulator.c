@@ -38,15 +38,15 @@
 #include <sys/select.h>
 #include <linux/usb/ch9.h>
 
-/* Raw-gadget includes */
+/* Raw-gadget includes - definitions must match kernel's raw_gadget.h */
 #define USB_RAW_IOCTL_INIT              _IOW('U', 0, struct usb_raw_init)
 #define USB_RAW_IOCTL_RUN               _IO('U', 1)
 #define USB_RAW_IOCTL_EVENT_FETCH       _IOR('U', 2, struct usb_raw_event)
-#define USB_RAW_IOCTL_EP0_READ          _IOWR('U', 3, struct usb_raw_ep_io)
-#define USB_RAW_IOCTL_EP0_WRITE         _IOWR('U', 4, struct usb_raw_ep_io)
+#define USB_RAW_IOCTL_EP0_WRITE         _IOW('U', 3, struct usb_raw_ep_io)
+#define USB_RAW_IOCTL_EP0_READ          _IOWR('U', 4, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP_ENABLE         _IOW('U', 5, struct usb_endpoint_descriptor)
 #define USB_RAW_IOCTL_EP_DISABLE        _IOW('U', 6, uint32_t)
-#define USB_RAW_IOCTL_EP_WRITE          _IOWR('U', 7, struct usb_raw_ep_io)
+#define USB_RAW_IOCTL_EP_WRITE          _IOW('U', 7, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_EP_READ           _IOWR('U', 8, struct usb_raw_ep_io)
 #define USB_RAW_IOCTL_CONFIGURE         _IO('U', 9)
 #define USB_RAW_IOCTL_VBUS_DRAW         _IOW('U', 10, uint32_t)
@@ -427,8 +427,8 @@ static int enable_endpoints_and_configure(void) {
         /* Non-fatal, continue */
     }
     
-    /* Configure device */
-    if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE) < 0) {
+    /* Configure device - USB_RAW_IOCTL_CONFIGURE requires 0 as argument */
+    if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE, 0) < 0) {
         perror("USB_RAW_IOCTL_CONFIGURE failed");
         return -1;
     }
@@ -946,9 +946,12 @@ int main(int argc, char **argv) {
      * IMPORTANT: Run the gadget BEFORE trying to get endpoint info.
      * USB_RAW_IOCTL_EPS_INFO requires the gadget to be running and
      * a connect event to have occurred.
+     * 
+     * Note: USB_RAW_IOCTL_RUN requires 0 as its argument value.
+     * The kernel checks if (value) return -EINVAL, so we must pass 0.
      */
     printf("Running USB gadget...\n");
-    if (ioctl(fd, USB_RAW_IOCTL_RUN) < 0) {
+    if (ioctl(fd, USB_RAW_IOCTL_RUN, 0) < 0) {
         perror("USB_RAW_IOCTL_RUN failed");
         close(fd);
         return 1;
