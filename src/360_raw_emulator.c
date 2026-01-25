@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <pthread.h>
+#include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <linux/usb/ch9.h>
@@ -200,20 +201,102 @@ static int open_raw_gadget(void) {
     return 0;
 }
 
+/* 
+ * Detect the UDC (USB Device Controller) name for the current hardware.
+ * 
+ * On Raspberry Pi Zero / Zero 2 W, the UDC name is "20980000.usb" which
+ * corresponds to the BCM2835 USB controller at memory address 0x20980000.
+ * 
+ * The UDC name can be found at runtime in /sys/class/udc/ directory.
+ * 
+ * Returns: pointer to static buffer containing UDC name, or NULL on error
+ */
+static const char* detect_udc_name(void) {
+    static char udc_name[64];
+    DIR *dir;
+    struct dirent *entry;
+    
+    /* Try to read from /sys/class/udc directory using opendir/readdir */
+    dir = opendir("/sys/class/udc");
+    if (dir != NULL) {
+        while ((entry = readdir(dir)) != NULL) {
+            /* Skip . and .. entries */
+            if (entry->d_name[0] == '.') {
+                continue;
+            }
+            /* Found a UDC entry - copy the name safely */
+            strncpy(udc_name, entry->d_name, sizeof(udc_name) - 1);
+            udc_name[sizeof(udc_name) - 1] = '\0';  /* Ensure null termination */
+            closedir(dir);
+            return udc_name;
+        }
+        closedir(dir);
+    }
+    
+    /*
+     * Fallback to known Pi Zero UDC name.
+     * 
+     * "20980000.usb" is the UDC name for Raspberry Pi Zero, Zero W, and Zero 2 W.
+     * This corresponds to the BCM2835/BCM2837 USB controller at:
+     *   - Memory address: 0x20980000 (Pi Zero/Zero W with BCM2835)
+     *   - Or 0x3f980000 on Pi 2/3 (BCM2836/BCM2837) but named consistently
+     * 
+     * The dwc2 driver must be loaded (dtoverlay=dwc2 in /boot/config.txt) 
+     * for this UDC to be available.
+     * 
+     * Common UDC names by platform:
+     *   - Pi Zero / Zero W / Zero 2 W: "20980000.usb"
+     *   - Pi 4: "fe980000.usb" 
+     *   - Virtual/testing: "dummy_udc.0"
+     */
+    printf("Warning: Could not detect UDC from /sys/class/udc, using default\n");
+    return "20980000.usb";
+}
+
 /* Initialize raw-gadget with UDC */
 static int init_raw_gadget(void) {
-    struct usb_raw_init init = {
-        .driver_name = "dummy_udc",  /* Will be auto-detected */
-        .device_name = "",
-        .speed = USB_SPEED_FULL,
-    };
+    const char *udc_name = detect_udc_name();
+    
+    if (udc_name == NULL) {
+        fprintf(stderr, "Error: No UDC available. Make sure:\n");
+        fprintf(stderr, "  1. dtoverlay=dwc2 is in /boot/config.txt\n");
+        fprintf(stderr, "  2. dwc2 module is loaded (modprobe dwc2)\n");
+        fprintf(stderr, "  3. Pi Zero is connected via USB data port\n");
+        return -1;
+    }
+    
+    printf("Using UDC: %s\n", udc_name);
+    
+    /*
+     * Initialize raw-gadget with the detected UDC.
+     * 
+     * driver_name: "dwc2" - the USB device controller driver for Pi Zero
+     * device_name: UDC device name from /sys/class/udc/ (e.g., "20980000.usb")
+     * speed: USB_SPEED_FULL (12 Mbps) - Xbox 360 controllers are full-speed
+     * 
+     * Note: Using wrong driver_name or device_name causes "Invalid argument" error
+     * from USB_RAW_IOCTL_INIT. The device_name must match exactly what appears
+     * in /sys/class/udc/, which for Pi Zero is "20980000.usb".
+     */
+    struct usb_raw_init init;
+    memset(&init, 0, sizeof(init));
+    strncpy((char*)init.driver_name, "dwc2", sizeof(init.driver_name) - 1);
+    init.driver_name[sizeof(init.driver_name) - 1] = '\0';  /* Ensure null termination */
+    strncpy((char*)init.device_name, udc_name, sizeof(init.device_name) - 1);
+    init.device_name[sizeof(init.device_name) - 1] = '\0';  /* Ensure null termination */
+    init.speed = USB_SPEED_FULL;
     
     int ret = ioctl(fd, USB_RAW_IOCTL_INIT, &init);
     if (ret < 0) {
         perror("USB_RAW_IOCTL_INIT failed");
+        fprintf(stderr, "\nTroubleshooting:\n");
+        fprintf(stderr, "  - Check /sys/class/udc/ for available UDC names\n");
+        fprintf(stderr, "  - Make sure dwc2 driver is loaded: lsmod | grep dwc2\n");
+        fprintf(stderr, "  - Verify raw-gadget module is loaded: lsmod | grep raw_gadget\n");
+        fprintf(stderr, "  - Expected UDC for Pi Zero: 20980000.usb\n");
         return -1;
     }
-    printf("Initialized raw-gadget (speed: full)\n");
+    printf("Initialized raw-gadget (driver: dwc2, device: %s, speed: full)\n", udc_name);
     return 0;
 }
 

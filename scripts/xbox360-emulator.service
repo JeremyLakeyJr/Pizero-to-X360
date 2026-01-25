@@ -23,27 +23,55 @@
 #   Enable:  sudo systemctl enable xbox360-emulator
 #   Disable: sudo systemctl disable xbox360-emulator
 #
+# Note: install.sh will replace /home/lakey/Pizero-to-X360 with the actual 
+#       installation directory automatically.
+#
 
 [Unit]
 Description=Xbox 360 Controller Emulator for Raspberry Pi Zero (raw-gadget)
 Documentation=https://github.com/JeremyLakeyJr/Pizero-to-X360
-After=network.target multi-user.target
-Wants=network.target
+# Wait for basic system to be ready
+After=local-fs.target sysinit.target
+# We need dwc2 overlay loaded (happens early in boot)
+Wants=sys-subsystem-usb-devices.target
 
 [Service]
 Type=simple
-# Load raw-gadget module if not already loaded
-ExecStartPre=/bin/sh -c 'modprobe raw_gadget 2>/dev/null || true'
-# Start the raw-gadget emulator
+
+# Pre-start checks and module loading
+# 1. Load dwc2 module (USB OTG driver)
+ExecStartPre=/bin/sh -c 'modprobe dwc2 2>/dev/null || echo "dwc2 may already be loaded via dtoverlay"'
+# 2. Load raw_gadget module (try modprobe first, fallback to insmod if .ko exists)
+ExecStartPre=/bin/sh -c 'modprobe raw_gadget 2>/dev/null || ([ -f /home/lakey/Pizero-to-X360/raw_gadget.ko ] && insmod /home/lakey/Pizero-to-X360/raw_gadget.ko 2>/dev/null) || echo "Warning: raw_gadget load failed"'
+# 3. Verify raw-gadget device exists (fail if not)
+ExecStartPre=/bin/sh -c 'test -c /dev/raw-gadget || (echo "ERROR: /dev/raw-gadget not found. Is raw_gadget module loaded?" && exit 1)'
+# 4. Verify UDC is available
+ExecStartPre=/bin/sh -c 'ls /sys/class/udc/ | grep -q . || (echo "Warning: No UDC available yet, dwc2 may not be ready" && sleep 2)'
+
+# Start the raw-gadget emulator binary
 ExecStart=/home/lakey/Pizero-to-X360/bin/xbox360_raw_emulator
-# Unload module on stop
-ExecStopPost=/bin/sh -c 'sleep 1 && rmmod raw_gadget 2>/dev/null || true'
+
+# Graceful shutdown handling
+ExecStop=/bin/kill -TERM $MAINPID
+# Post-stop cleanup (do NOT unload raw_gadget as other services may use it)
+ExecStopPost=/bin/sh -c 'sleep 1'
+
+# Restart policy
 Restart=on-failure
 RestartSec=5
+# Maximum restart attempts (prevent infinite loop on persistent failure)
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Security and environment
 User=root
 WorkingDirectory=/home/lakey/Pizero-to-X360
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Logging to systemd journal
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=xbox360-emulator
 
 [Install]
 WantedBy=multi-user.target

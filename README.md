@@ -448,6 +448,21 @@ cat /boot/firmware/cmdline.txt
 4. Check emulator binary is running: `ps aux | grep 360_raw_emulator`
 5. Test with `evtest` to confirm events work
 
+**Problem**: "USB_RAW_IOCTL_INIT failed: Invalid argument" error
+
+**Cause**: The UDC (USB Device Controller) name or driver name is incorrect.
+
+**Solution**:
+1. Check your UDC name: `ls /sys/class/udc/` (should show `20980000.usb` on Pi Zero)
+2. The C emulator now auto-detects the UDC name
+3. If still failing, verify dwc2 is loaded: `lsmod | grep dwc2`
+
+**UDC Names by Platform**:
+| Platform | UDC Name |
+|----------|----------|
+| Pi Zero / Zero W / Zero 2 W | `20980000.usb` |
+| Pi 4 | `fe980000.usb` |
+
 For more troubleshooting, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Contributing
