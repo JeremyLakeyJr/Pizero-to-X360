@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sensational Haptics – Business Pitch</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a1a; color: #e8eaf6; overflow: hidden; }
+
+    /* ── Slide Container ──────────────────────────── */
+    #deck { width: 100vw; height: 100vh; position: relative; }
+    .slide {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 60px 80px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.5s ease;
+    }
+    .slide.active { opacity: 1; pointer-events: all; }
+
+    /* ── Accent colours ───────────────────────────── */
+    :root {
+      --cyan:   #00e5ff;
+      --purple: #7c4dff;
+      --pink:   #ff4081;
+      --dark:   #0d0d2b;
+      --card:   rgba(255,255,255,0.05);
+    }
+
+    /* ── Backgrounds per slide ────────────────────── */
+    .bg-title    { background: radial-gradient(ellipse at 60% 40%, #1a0050 0%, #0a0a1a 70%); }
+    .bg-name     { background: radial-gradient(ellipse at 30% 60%, #001a40 0%, #0a0a1a 70%); }
+    .bg-slogan   { background: radial-gradient(ellipse at 70% 30%, #00202a 0%, #0a0a1a 70%); }
+    .bg-logo     { background: radial-gradient(ellipse at 50% 50%, #1a0030 0%, #0a0a1a 70%); }
+    .bg-jingle   { background: radial-gradient(ellipse at 20% 70%, #001020 0%, #0a0a1a 70%); }
+    .bg-partners { background: radial-gradient(ellipse at 80% 20%, #0a001a 0%, #0a0a1a 70%); }
+    .bg-goals    { background: radial-gradient(ellipse at 50% 80%, #001530 0%, #0a0a1a 70%); }
+    .bg-product  { background: radial-gradient(ellipse at 30% 30%, #0a0020 0%, #0a0a1a 70%); }
+    .bg-place    { background: radial-gradient(ellipse at 70% 60%, #002010 0%, #0a0a1a 70%); }
+    .bg-price    { background: radial-gradient(ellipse at 40% 50%, #200010 0%, #0a0a1a 70%); }
+    .bg-promo    { background: radial-gradient(ellipse at 60% 30%, #001a20 0%, #0a0a1a 70%); }
+    .bg-qa       { background: radial-gradient(ellipse at 50% 50%, #10001a 0%, #0a0a1a 70%); }
+    .bg-close    { background: radial-gradient(ellipse at 50% 50%, #1a0050 0%, #0a0a1a 70%); }
+
+    /* ── Typography helpers ───────────────────────── */
+    .slide-title {
+      font-size: 2.8rem; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.4em; text-align: center;
+    }
+    .slide-subtitle {
+      font-size: 1.1rem; color: #aaa; letter-spacing: 1px; text-transform: uppercase;
+      margin-bottom: 1.8em; text-align: center;
+    }
+    .accent   { color: var(--cyan); }
+    .accent2  { color: var(--purple); }
+    .accent3  { color: var(--pink); }
+    .glow { text-shadow: 0 0 18px var(--cyan); }
+
+    /* ── Cards ────────────────────────────────────── */
+    .card-grid {
+      display: grid; gap: 1.2rem;
+      width: 100%; max-width: 960px;
+    }
+    .card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .card-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 1.4rem 1.6rem;
+      backdrop-filter: blur(8px);
+    }
+    .card h3 { font-size: 1rem; color: var(--cyan); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 1px; }
+    .card p, .card li { font-size: 0.92rem; line-height: 1.7; color: #ccc; }
+    .card ul { padding-left: 1.2rem; }
+
+    /* ── Big quote ────────────────────────────────── */
+    .big-quote {
+      font-size: 2.2rem; font-weight: 700; text-align: center; max-width: 800px;
+      line-height: 1.4; color: #fff;
+    }
+    .big-quote span { color: var(--cyan); }
+
+    /* ── Logo SVG area ────────────────────────────── */
+    .logo-showcase {
+      display: flex; flex-direction: column; align-items: center; gap: 1.8rem;
+    }
+    .logo-svg-wrap {
+      background: rgba(0,0,0,0.4);
+      border: 2px solid var(--purple);
+      border-radius: 20px; padding: 2rem 3rem;
+    }
+
+    /* ── Hero title slide ─────────────────────────── */
+    .hero-name {
+      font-size: 4.5rem; font-weight: 900; letter-spacing: 4px; text-align: center;
+      background: linear-gradient(135deg, var(--cyan), var(--pink));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero-tag {
+      font-size: 1.3rem; color: #aaa; text-align: center; margin-top: 0.6rem; letter-spacing: 3px;
+    }
+    .hero-presenters {
+      margin-top: 3rem; font-size: 1rem; color: #666; letter-spacing: 2px; text-transform: uppercase;
+    }
+
+    /* ── Partner card ─────────────────────────────── */
+    .partner-card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 2rem;
+      display: flex; flex-direction: column; align-items: center; gap: 1rem;
+      text-align: center;
+    }
+    .partner-avatar {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; font-weight: 800; color: #fff;
+    }
+    .partner-card h3 { font-size: 1.3rem; color: #fff; }
+    .partner-card p  { font-size: 0.88rem; color: #aaa; line-height: 1.6; }
+
+    /* ── Hardware chip list ───────────────────────── */
+    .chip-list {
+      display: flex; flex-wrap: wrap; gap: 0.6rem;
+      justify-content: center; max-width: 800px;
+    }
+    .chip {
+      background: rgba(0,229,255,0.1);
+      border: 1px solid var(--cyan);
+      border-radius: 100px; padding: 0.35rem 1rem;
+      font-size: 0.82rem; color: var(--cyan); letter-spacing: 0.5px;
+    }
+
+    /* ── Progress bar (slide counter) ────────────────*/
+    #progress-bar {
+      position: fixed; bottom: 0; left: 0; height: 3px;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      transition: width 0.4s ease;
+    }
+
+    /* ── Nav controls ─────────────────────────────── */
+    #nav {
+      position: fixed; bottom: 22px; right: 30px;
+      display: flex; gap: 12px; z-index: 100;
+    }
+    .nav-btn {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; font-size: 1.2rem;
+      width: 42px; height: 42px; border-radius: 50%;
+      cursor: pointer; transition: background 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-btn:hover { background: rgba(0,229,255,0.2); border-color: var(--cyan); }
+
+    #slide-counter {
+      position: fixed; bottom: 28px; left: 30px;
+      font-size: 0.75rem; color: #555; letter-spacing: 1px;
+    }
+
+    /* ── Divider line ─────────────────────────────── */
+    .divider {
+      width: 80px; height: 3px;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      border-radius: 10px; margin: 0.6rem auto 1.6rem;
+    }
+
+    /* ── Price table ──────────────────────────────── */
+    .price-table {
+      width: 100%; max-width: 800px; border-collapse: collapse;
+    }
+    .price-table th {
+      background: rgba(0,229,255,0.1); color: var(--cyan);
+      padding: 0.7rem 1.2rem; text-align: left; font-size: 0.85rem;
+      letter-spacing: 1px; text-transform: uppercase;
+      border-bottom: 1px solid rgba(0,229,255,0.3);
+    }
+    .price-table td {
+      padding: 0.65rem 1.2rem; font-size: 0.88rem; color: #ccc;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .price-table tr:last-child td { border-bottom: none; }
+
+    /* ── Jingle box ───────────────────────────────── */
+    .jingle-box {
+      background: rgba(255,64,129,0.08);
+      border: 1px solid var(--pink);
+      border-radius: 14px; padding: 2rem 2.5rem;
+      max-width: 700px; text-align: center;
+    }
+    .jingle-box .lyric { font-size: 1.05rem; line-height: 2; color: #f5f5f5; font-style: italic; }
+    .jingle-box .note  { font-size: 0.8rem; color: #aaa; margin-top: 1rem; }
+
+    /* ── Q&A slide ────────────────────────────────── */
+    .qa-item {
+      background: var(--card);
+      border-left: 3px solid var(--purple);
+      border-radius: 0 10px 10px 0;
+      padding: 1rem 1.4rem; margin-bottom: 0.9rem;
+      max-width: 900px; width: 100%;
+    }
+    .qa-item .q { font-size: 0.82rem; color: var(--purple); letter-spacing: 0.5px; margin-bottom: 0.35rem; }
+    .qa-item .a { font-size: 0.9rem; color: #ddd; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- ─── SLIDE 1 · Title ───────────────────────────────────────────── -->
+  <section class="slide bg-title active" id="s1">
+    <div class="hero-name">Sensational Haptics</div>
+    <div class="hero-tag">Feel Every Virtual World</div>
+    <div class="divider"></div>
+    <p style="color:#aaa;font-size:1rem;text-align:center;max-width:560px;">
+      Open-source VR haptic gloves that bring real touch to virtual reality —<br>
+      cross-platform, community-driven, and accessible to all.
+    </p>
+    <div class="hero-presenters">Presented by &nbsp;Strong Baker &nbsp;·&nbsp; Jeremy Lakey</div>
+  </section>
+
+  <!-- ─── SLIDE 2 · Company Name ───────────────────────────────────── -->
+  <section class="slide bg-name" id="s2">
+    <div class="slide-title">The Name</div>
+    <div class="divider"></div>
+    <div class="card-grid cols-2" style="max-width:860px;">
+      <div class="card">
+        <h3>🧠 "Sensational"</h3>
+        <p>
+          The word "sensational" has a <strong style="color:#fff">double meaning</strong>:
+          it refers to <em>sensation</em> — the physical act of feeling — and
+          to something <em>extraordinary</em> or headline-worthy. Our gloves let
+          players literally sense the virtual world, and we believe the experience
+          is nothing short of sensational.
+        </p>
+      </div>
+      <div class="card">
+        <h3>✋ "Haptics"</h3>
+        <p>
+          Haptics is the science of touch-based feedback. Calling ourselves
+          "Haptics" signals that we are specialists in this space — not just
+          another VR accessory maker, but a company whose entire identity is
+          built around mastering the sense of touch.
+        </p>
+      </div>
+      <div class="card" style="grid-column:1/-1;">
+        <h3>🔗 Together</h3>
+        <p>
+          <strong style="color:var(--cyan)">Sensational Haptics</strong> is easy to
+          remember, clearly describes what we do, and inspires excitement. It positions
+          our brand at the intersection of cutting-edge technology and unforgettable
+          human experience.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 3 · Slogan ─────────────────────────────────────────── -->
+  <section class="slide bg-slogan" id="s3">
+    <div class="slide-title">The Slogan</div>
+    <div class="divider"></div>
+    <div class="big-quote">"<span>Feel Every</span> Virtual World."</div>
+    <div style="margin-top:2.5rem;max-width:760px;display:grid;gap:1rem;grid-template-columns:1fr 1fr;">
+      <div class="card">
+        <h3>Why "Feel"?</h3>
+        <p>
+          Touch is the one sense VR has failed to recreate — until now. "Feel" is
+          an immediate, visceral verb that instantly communicates our value proposition:
+          we give players the sense of touch back.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Why "Every Virtual World"?</h3>
+        <p>
+          Our gloves work across Meta, Steam, PlayStation, and Vive ecosystems. "Every"
+          signals universal compatibility — no matter which headset you own, we've got
+          you covered.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 4 · Logo ───────────────────────────────────────────── -->
+  <section class="slide bg-logo" id="s4">
+    <div class="slide-title">The Logo</div>
+    <div class="divider"></div>
+    <div class="logo-showcase">
+      <!-- SVG Logo -->
+      <div class="logo-svg-wrap">
+        <svg width="320" height="130" viewBox="0 0 320 130" xmlns="http://www.w3.org/2000/svg">
+          <!-- Glove silhouette (abstract) -->
+          <defs>
+            <linearGradient id="grd" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%"   stop-color="#00e5ff"/>
+              <stop offset="100%" stop-color="#7c4dff"/>
+            </linearGradient>
+            <filter id="glow-f">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <!-- abstract hand outline -->
+          <path d="M60 110 Q55 80 58 55 L62 20 Q63 14 68 14 Q74 14 74 22 L74 58
+                   L78 20 Q79 13 85 13 Q91 13 91 21 L91 58
+                   L94 22 Q95 14 101 14 Q107 14 107 22 L107 58
+                   L109 28 Q110 20 116 20 Q122 20 122 28 L122 70
+                   Q135 60 145 65 Q155 70 148 85 Q140 98 120 110 Z"
+                fill="none" stroke="url(#grd)" stroke-width="2.5"
+                filter="url(#glow-f)" opacity="0.9"/>
+          <!-- haptic pulse rings around fingertips -->
+          <circle cx="68" cy="17"  r="5" fill="none" stroke="#00e5ff" stroke-width="1.2" opacity="0.6"/>
+          <circle cx="68" cy="17"  r="9" fill="none" stroke="#00e5ff" stroke-width="0.7" opacity="0.3"/>
+          <circle cx="85" cy="15"  r="5" fill="none" stroke="#7c4dff" stroke-width="1.2" opacity="0.6"/>
+          <circle cx="85" cy="15"  r="9" fill="none" stroke="#7c4dff" stroke-width="0.7" opacity="0.3"/>
+          <circle cx="101" cy="16" r="5" fill="none" stroke="#ff4081" stroke-width="1.2" opacity="0.6"/>
+          <circle cx="101" cy="16" r="9" fill="none" stroke="#ff4081" stroke-width="0.7" opacity="0.3"/>
+          <circle cx="116" cy="22" r="5" fill="none" stroke="#00e5ff" stroke-width="1.2" opacity="0.6"/>
+          <!-- Company Name -->
+          <text x="170" y="52" font-family="'Segoe UI',Arial,sans-serif"
+                font-size="22" font-weight="800" fill="url(#grd)" letter-spacing="1">SENSATIONAL</text>
+          <text x="175" y="80" font-family="'Segoe UI',Arial,sans-serif"
+                font-size="18" font-weight="300" fill="#aaa" letter-spacing="5">HAPTICS</text>
+          <!-- tagline -->
+          <text x="170" y="105" font-family="'Segoe UI',Arial,sans-serif"
+                font-size="9" fill="#555" letter-spacing="2">FEEL EVERY VIRTUAL WORLD</text>
+        </svg>
+      </div>
+
+      <div class="card-grid cols-2" style="max-width:800px;">
+        <div class="card">
+          <h3>🖐 The Hand</h3>
+          <p>An abstract glove silhouette instantly communicates the product. The open-hand pose suggests both interaction and welcome — inviting users into a new sensory dimension.</p>
+        </div>
+        <div class="card">
+          <h3>💡 Pulse Rings</h3>
+          <p>Small rings on each fingertip represent haptic feedback pulses radiating outward — touch becoming visible. The gradient (cyan → purple) evokes technology and creativity.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 5 · Jingle ─────────────────────────────────────────── -->
+  <section class="slide bg-jingle" id="s5">
+    <div class="slide-title">The Jingle</div>
+    <div class="slide-subtitle">Short · Catchy · Memorable</div>
+    <div class="jingle-box">
+      <p class="lyric">
+        ♪ <strong>Put your hands on, feel the beat,</strong><br>
+        every texture, every heat. ♪<br>
+        ♪ <strong>Reach right in — it's real today,</strong><br>
+        Sensational Haptics — let you feel the way! ♪
+      </p>
+      <p class="note">
+        🎵 Upbeat synth-pop melody · 8-second hook · works as a pre-roll ad &amp; in-store loop
+      </p>
+    </div>
+    <div class="card-grid cols-2" style="max-width:760px;margin-top:1.4rem;">
+      <div class="card">
+        <h3>Why it's catchy</h3>
+        <p>Short AABB rhyme scheme, strong action verbs ("put", "reach"), and the brand name lands on the final beat — natural call-to-action placement.</p>
+      </div>
+      <div class="card">
+        <h3>Strategic value</h3>
+        <p>The jingle doubles as a sonic logo — the last bar alone ("Sensational Haptics") can run as a 2-second audio watermark on every video ad.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 6 · Business Partners ─────────────────────────────── -->
+  <section class="slide bg-partners" id="s6">
+    <div class="slide-title">Meet the Founders</div>
+    <div class="divider"></div>
+    <div style="display:flex;gap:2rem;margin-top:1rem;">
+      <div class="partner-card" style="min-width:280px;">
+        <div class="partner-avatar">SB</div>
+        <h3>Strong Baker</h3>
+        <p>
+          Co-founder &amp; Head of Hardware Engineering.<br><br>
+          Strong leads the design and prototyping of the haptic glove hardware,
+          overseeing the ESP32 firmware, motor driver integration, and infrared
+          tracking system. Passionate about making cutting-edge tech accessible and
+          open-source.
+        </p>
+      </div>
+      <div class="partner-card" style="min-width:280px;">
+        <div class="partner-avatar" style="background:linear-gradient(135deg,var(--pink),var(--purple))">JL</div>
+        <h3>Jeremy Lakey</h3>
+        <p>
+          Co-founder &amp; Head of Software &amp; Community.<br><br>
+          Jeremy drives the open-source SDK, cross-platform headset compatibility
+          layer, and community modding framework. He champions the developer
+          ecosystem and ensures every hacker, hobbyist, and studio can build on
+          top of Sensational Haptics.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 7 · Company Goals ──────────────────────────────────── -->
+  <section class="slide bg-goals" id="s7">
+    <div class="slide-title">Company Goals</div>
+    <div class="divider"></div>
+    <div class="card-grid cols-2" style="max-width:900px;">
+      <div class="card">
+        <h3>🎯 Short-Term (Year 1)</h3>
+        <ul>
+          <li>Ship 500 Developer Edition units to early backers</li>
+          <li>Publish full open-source hardware &amp; firmware on GitHub</li>
+          <li>Launch SDK with Meta, SteamVR, PSVR2 &amp; Vive drivers</li>
+          <li>Build a Discord community of 5 000+ modders</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>📈 Mid-Term (Years 2–3)</h3>
+        <ul>
+          <li>Retail launch via Amazon, Best Buy, and VR specialty stores</li>
+          <li>Partner with 3 major VR game studios for native haptic support</li>
+          <li>Release Gen-2 gloves with temperature &amp; texture simulation</li>
+          <li>Reach $1 M ARR through hardware + accessory sales</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🚀 Long-Term (Years 4–5)</h3>
+        <ul>
+          <li>Become the de-facto open haptic standard for VR/AR</li>
+          <li>License IP to enterprise (medical training, military sim)</li>
+          <li>Expand to full-body haptic suit ecosystem</li>
+          <li>Establish a non-profit foundation for haptic accessibility</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🌍 Core Values</h3>
+        <ul>
+          <li><strong style="color:var(--cyan)">Open Source First</strong> — hardware schematics &amp; code always public</li>
+          <li><strong style="color:var(--cyan)">Accessibility</strong> — affordable price point for everyone</li>
+          <li><strong style="color:var(--cyan)">Community</strong> — modders &amp; developers shape the roadmap</li>
+          <li><strong style="color:var(--cyan)">Innovation</strong> — continuous hardware iteration</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 8 · Product ─────────────────────────────────────────── -->
+  <section class="slide bg-product" id="s8">
+    <div class="slide-title">The Product</div>
+    <div class="slide-subtitle">Open-Source VR Haptic Gloves</div>
+    <div class="chip-list" style="margin-bottom:1.4rem;">
+      <span class="chip">ESP32 MCU</span>
+      <span class="chip">ERM / LRA Vibration Motors</span>
+      <span class="chip">Infrared Finger Tracking</span>
+      <span class="chip">Flex Sensors</span>
+      <span class="chip">BLE 5.0 Wireless</span>
+      <span class="chip">USB-C Charging</span>
+      <span class="chip">Meta Compatible</span>
+      <span class="chip">SteamVR Compatible</span>
+      <span class="chip">PSVR2 Compatible</span>
+      <span class="chip">Vive Compatible</span>
+      <span class="chip">Open Hardware License</span>
+      <span class="chip">Community Mod Support</span>
+    </div>
+    <div class="card-grid cols-3" style="max-width:920px;">
+      <div class="card">
+        <h3>Purpose</h3>
+        <p>Restore the sense of touch in virtual reality. Current VR controllers provide buttons and vibration — our gloves provide nuanced, localized haptic sensations on every finger.</p>
+      </div>
+      <div class="card">
+        <h3>Functions</h3>
+        <ul>
+          <li>Per-finger vibrotactile feedback</li>
+          <li>IR-based hand &amp; finger tracking</li>
+          <li>Flex-sensor grip detection</li>
+          <li>USB-C + BLE 5.0 connectivity</li>
+          <li>Open SDK for custom haptic patterns</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>The Need</h3>
+        <p>The global VR haptics market is projected to reach <strong style="color:var(--cyan)">$5.9 B by 2027</strong>. No affordable, open-source solution exists. We fill that gap.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 9 · Place ───────────────────────────────────────────── -->
+  <section class="slide bg-place" id="s9">
+    <div class="slide-title">Place</div>
+    <div class="slide-subtitle">Where Will the Product Be Sold?</div>
+    <div class="card-grid cols-2" style="max-width:860px;">
+      <div class="card">
+        <h3>🌐 Online – Direct-to-Consumer</h3>
+        <ul>
+          <li><strong style="color:#fff">SensationalHaptics.io</strong> — flagship storefront, community forum, docs</li>
+          <li><strong style="color:#fff">Amazon</strong> — broadest global reach, Prime fulfillment</li>
+          <li><strong style="color:#fff">Kickstarter / Crowd Supply</strong> — launch crowdfunding for Dev Edition</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🏪 Retail &amp; Specialty</h3>
+        <ul>
+          <li><strong style="color:#fff">Best Buy / Micro Center</strong> — consumer electronics shelf space</li>
+          <li><strong style="color:#fff">VR-focused stores</strong> — VRLA Expo, specialty VR boutiques</li>
+          <li><strong style="color:#fff">Maker / hacker channels</strong> — Adafruit, SparkFun for the DIY kit</li>
+        </ul>
+      </div>
+      <div class="card" style="grid-column:1/-1;">
+        <h3>🤝 B2B &amp; Developer Channels</h3>
+        <p>University labs, VR arcades, and enterprise training providers can purchase bulk developer kits directly through our website with volume discounts. Game studios get free dev units in exchange for native haptic integration.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 10 · Price ──────────────────────────────────────────── -->
+  <section class="slide bg-price" id="s10">
+    <div class="slide-title">Price</div>
+    <div class="divider"></div>
+    <table class="price-table">
+      <thead>
+        <tr>
+          <th>Tier</th>
+          <th>Price</th>
+          <th>What's Included</th>
+          <th>Rationale</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="accent">DIY Kit</span></td>
+          <td><strong>$79</strong></td>
+          <td>PCB, ESP32, motors, IR sensors, 3D-print files</td>
+          <td>Targets makers &amp; students; covers BOM cost + small margin; builds community</td>
+        </tr>
+        <tr>
+          <td><span class="accent">Standard Edition</span></td>
+          <td><strong>$149</strong></td>
+          <td>Assembled gloves, USB-C cable, quick-start guide</td>
+          <td>Sub-$200 consumer sweet spot; well below bHaptics ($500) and HaptX ($5 000+)</td>
+        </tr>
+        <tr>
+          <td><span class="accent2">Developer Edition</span></td>
+          <td><strong>$199</strong></td>
+          <td>All above + full SDK access, priority support, modding toolkit</td>
+          <td>Premium for studios; still 4× cheaper than nearest competitor</td>
+        </tr>
+        <tr>
+          <td><span class="accent3">Enterprise Bundle</span></td>
+          <td><strong>$999 / 10-pack</strong></td>
+          <td>10× Dev Edition + onboarding call + SLA support</td>
+          <td>Unlocks B2B segment (labs, arcades, training sims) at volume</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="card" style="max-width:860px;margin-top:1.2rem;">
+      <h3>💲 Market Comparison</h3>
+      <p>bHaptics TactGlove: <strong style="color:#fff">~$500</strong> &nbsp;|&nbsp; HaptX G1: <strong style="color:#fff">$5 000+</strong> &nbsp;|&nbsp; Manus VR: <strong style="color:#fff">$2 000+</strong>. Our <strong style="color:var(--cyan)">$149 Standard</strong> is the most affordable fully-assembled haptic glove on the market while remaining open-source.</p>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 11 · Promotion ──────────────────────────────────────── -->
+  <section class="slide bg-promo" id="s11">
+    <div class="slide-title">Promotion</div>
+    <div class="slide-subtitle">How We Reach Our Customers</div>
+    <div class="card-grid cols-2" style="max-width:900px;">
+      <div class="card">
+        <h3>📱 Social Media &amp; Content</h3>
+        <ul>
+          <li><strong style="color:#fff">YouTube / TikTok</strong> — first-person unboxing &amp; gameplay clips showing haptic reactions</li>
+          <li><strong style="color:#fff">Reddit</strong> — r/virtualreality, r/oculus, r/HMD early access threads</li>
+          <li><strong style="color:#fff">Twitter / X</strong> — dev log threads; behind-the-scenes builds</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🎮 Influencer &amp; Community</h3>
+        <ul>
+          <li>Send free units to top VR YouTube &amp; Twitch creators</li>
+          <li>Sponsor VR gaming tournaments and LAN events</li>
+          <li>Discord community server with modding bounties</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🚀 Launch Campaign</h3>
+        <ul>
+          <li>Kickstarter campaign with exclusive early-backer pricing</li>
+          <li>Press release to Engadget, The Verge, UploadVR</li>
+          <li>Demo booth at CES, GDC, and VR/AR Association events</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🔧 Open-Source Virality</h3>
+        <ul>
+          <li>GitHub repo — high-quality README attracts organic stars &amp; forks</li>
+          <li>Hackster.io &amp; Instructables project features</li>
+          <li>University lab partnerships for research citation</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 12 · Investor Q&A ──────────────────────────────────── -->
+  <section class="slide bg-qa" id="s12">
+    <div class="slide-title">Investor Q&amp;A</div>
+    <div class="divider"></div>
+    <div style="width:100%;max-width:900px;overflow-y:auto;max-height:60vh;">
+      <div class="qa-item">
+        <div class="q">Q · How much money are you asking for?</div>
+        <div class="a"><strong style="color:var(--cyan)">$75 000</strong> seed funding to cover first-batch production (500 units), tooling, certifications (FCC/CE), and 6 months of operating expenses.</div>
+      </div>
+      <div class="qa-item">
+        <div class="q">Q · What will you use that money for?</div>
+        <div class="a">
+          40% — Component sourcing &amp; PCB fabrication &nbsp;|&nbsp;
+          20% — Assembly &amp; QA &nbsp;|&nbsp;
+          20% — Marketing (influencers, events, ads) &nbsp;|&nbsp;
+          10% — FCC/CE certification &amp; legal &nbsp;|&nbsp;
+          10% — Operational reserve
+        </div>
+      </div>
+      <div class="qa-item">
+        <div class="q">Q · Estimated product cost vs. market price?</div>
+        <div class="a">BOM cost per unit ≈ <strong style="color:#fff">$42</strong>. MSRP <strong style="color:#fff">$149</strong>. Nearest competitor (bHaptics TactGlove) retails at <strong style="color:#fff">$500</strong>. We offer superior value at 30% of the competition's price.</div>
+      </div>
+      <div class="qa-item">
+        <div class="q">Q · Why is your product needed? What is the selling point?</div>
+        <div class="a">Existing VR lacks touch — the one sense that creates true immersion. Our gloves are the only affordable, open-source solution with cross-platform support, making them indispensable for gamers, developers, educators, and trainers alike.</div>
+      </div>
+      <div class="qa-item">
+        <div class="q">Q · Who is your target market? How do you plan to market it?</div>
+        <div class="a">Primary: VR enthusiasts (18–35, existing headset owners). Secondary: developers/studios, medical/military trainers. Marketing via VR influencers, Kickstarter launch, GitHub virality, and trade show demos.</div>
+      </div>
+      <div class="qa-item">
+        <div class="q">Q · What experience can turn this into an empire?</div>
+        <div class="a">Strong brings hardware prototyping depth and embedded systems expertise. Jeremy brings open-source community building and software platform experience. Together we've designed and shipped embedded devices and managed developer communities — the exact skills needed to scale hardware + ecosystem simultaneously.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SLIDE 13 · Closing ────────────────────────────────────────── -->
+  <section class="slide bg-close" id="s13">
+    <div class="hero-name" style="font-size:3.5rem;">Thank You</div>
+    <div class="hero-tag" style="margin-bottom:1.5rem;">Feel Every Virtual World.</div>
+    <div class="divider"></div>
+    <p style="color:#aaa;text-align:center;font-size:1rem;max-width:520px;line-height:1.8;">
+      <span class="accent">Sensational Haptics</span> — bridging the gap between the virtual and the real,<br>
+      one glove at a time.
+    </p>
+    <div style="display:flex;gap:3rem;margin-top:2.5rem;">
+      <div style="text-align:center;">
+        <div style="font-size:0.7rem;color:#555;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.3rem;">Co-founder</div>
+        <div style="color:#fff;font-size:1rem;">Strong Baker</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:0.7rem;color:#555;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.3rem;">Co-founder</div>
+        <div style="color:#fff;font-size:1rem;">Jeremy Lakey</div>
+      </div>
+    </div>
+    <div style="margin-top:2.5rem;font-size:0.78rem;color:#444;letter-spacing:1px;">
+      github.com/SensationalHaptics &nbsp;·&nbsp; sensationalhaptics.io
+    </div>
+  </section>
+
+</div><!-- #deck -->
+
+<!-- ── Progress bar ────────────────────────────── -->
+<div id="progress-bar"></div>
+
+<!-- ── Navigation ─────────────────────────────── -->
+<div id="nav">
+  <button class="nav-btn" id="btn-prev" title="Previous (←)">&#8592;</button>
+  <button class="nav-btn" id="btn-next" title="Next (→)">&#8594;</button>
+</div>
+<div id="slide-counter"></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let current = 0;
+
+  function show(n) {
+    slides[current].classList.remove('active');
+    current = (n + slides.length) % slides.length;
+    slides[current].classList.add('active');
+    document.getElementById('slide-counter').textContent =
+      (current + 1) + ' / ' + slides.length;
+    document.getElementById('progress-bar').style.width =
+      ((current + 1) / slides.length * 100) + '%';
+  }
+
+  document.getElementById('btn-next').addEventListener('click', () => show(current + 1));
+  document.getElementById('btn-prev').addEventListener('click', () => show(current - 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') show(current + 1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                     show(current - 1);
+  });
+
+  // Touch / swipe support
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 40) show(dx < 0 ? current + 1 : current - 1);
+    touchX = null;
+  });
+
+  show(0);
+</script>
+</body>
+</html>
